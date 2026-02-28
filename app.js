@@ -1,7 +1,11 @@
 const STORAGE_KEY = "golf-canarias-state-v2";
-const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v1";
+const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v2";
 const RFEG_HANDICAP_URL = "https://rfeg.es/jugar/handicap";
+const RFEG_API_URL = "https://api.rfeg.es/web/search/handicap";
 const PRIVATE_CONFIG = window.GOLF_PRIVATE_CONFIG ?? {};
+const RFEG_API_TOKEN =
+  PRIVATE_CONFIG.rfegToken ??
+  "coded_a74007e96390ad4907fefb4348062282cb20e8692778c75c3ffa36d5bcc9d5df243508f488a1a8965ce9b7a59cf683ab5841e7c7c1310f2f3e399ebb7b443f0b545e2dd2d9";
 const COURSE_GPS_API = {
   provider: "osm",
   enabled: true,
@@ -316,6 +320,9 @@ const verifiedCourseConfigs = {
 
 const players = loadPlayers();
 const courseDataCache = loadCourseDataCache();
+let federationSyncScheduled = false;
+let federationSyncInProgress = false;
+let federationSyncPromise = null;
 
 const courses = courseCatalog.map((course) => {
   const id = slugify(course.name);
@@ -360,6 +367,7 @@ const state = {
 registerServiceWorker();
 startGeolocationWatch();
 render();
+scheduleFederationSync();
 
 function createCourse(name, island, config) {
   const par = config.holes.reduce((sum, hole) => sum + hole[1], 0);
@@ -417,6 +425,7 @@ function renderSetup() {
   players.forEach((player) => {
     const row = document.createElement("label");
     row.className = "player-row";
+    const federationUi = getPlayerFederationUi(player);
     row.innerHTML = `
       <input type="checkbox" data-player-id="${player.id}" ${player.selected ? "checked" : ""} />
       <div class="player-main">
@@ -433,8 +442,8 @@ function renderSetup() {
         />
       </div>
       <div class="player-actions">
-        <span class="compact-button" data-state="done">HCP Local</span>
-        <span class="validation-note">No federación</span>
+        <span class="compact-button" data-state="${federationUi.state}">${federationUi.label}</span>
+        <span class="validation-note">${federationUi.note}</span>
       </div>
     `;
     playersList.appendChild(row);
@@ -452,6 +461,7 @@ function renderSetup() {
     .join("");
   courseHint.innerHTML = getCourseHint(selectedCourse);
   gpsCourseStatus.textContent = getGpsCourseStatus(selectedCourse);
+  scheduleFederationSync();
 
   playersList.addEventListener("change", (event) => {
     const checkbox = event.target.closest('input[type="checkbox"]');
@@ -673,6 +683,7 @@ async function startMatch() {
     return;
   }
 
+  await syncFederationHandicaps(activePlayers, { force: true });
   await requestCurrentPosition();
 
   const gpsReady = await ensureCourseGpsData(course);
@@ -1087,7 +1098,7 @@ function addPlayer() {
     license,
     handicapIndex: Number.isFinite(handicapIndex) ? handicapIndex : 0,
     selected: true,
-    validatedAt: "Local",
+    validatedAt: "",
   });
   persistState();
   render();
@@ -1097,7 +1108,7 @@ function refreshPlayerValidation(player) {
   if (!player) {
     return;
   }
-  player.validatedAt = "Local";
+  player.validationStatus = player.validationStatus ?? (player.validatedAt && /^\d{4}-\d{2}-\d{2}$/.test(player.validatedAt) ? "federation" : "idle");
 }
 
 function hasCachedGpsData(courseId) {
@@ -1266,16 +1277,12 @@ function buildOverpassCourseQuery(course) {
 )->.course;
 map_to_area .course->.courseArea;
 (
-  way["golf"="hole"](area.courseArea);
-  relation["golf"="hole"](area.courseArea);
+  node["golf"~"^(hole|green|pin)$"](area.courseArea);
+  way["golf"~"^(hole|green|pin)$"](area.courseArea);
+  relation["golf"~"^(hole|green|pin)$"](area.courseArea);
 )->.holes;
 (
-  way["golf"="green"](area.courseArea);
-  relation["golf"="green"](area.courseArea);
-)->.greens;
-(
   .holes;
-  .greens;
 );
 out center tags qt;
   `.trim();
@@ -1283,19 +1290,21 @@ out center tags qt;
 
 function normalizeOsmPayload(payload, course) {
   const elements = Array.isArray(payload?.elements) ? payload.elements : [];
+  const getLat = (entry) => Number(entry.lat ?? entry.center?.lat);
+  const getLng = (entry) => Number(entry.lon ?? entry.center?.lon);
   const holes = elements
-    .filter((entry) => entry.tags?.golf === "hole" && entry.center && entry.tags?.ref)
+    .filter((entry) => entry.tags?.golf === "hole" && entry.tags?.ref)
     .map((entry) => ({
       number: Number(entry.tags.ref),
-      lat: Number(entry.center.lat),
-      lng: Number(entry.center.lon),
+      lat: getLat(entry),
+      lng: getLng(entry),
     }))
-    .filter((entry) => Number.isInteger(entry.number));
+    .filter((entry) => Number.isInteger(entry.number) && Number.isFinite(entry.lat) && Number.isFinite(entry.lng));
   const greens = elements
-    .filter((entry) => entry.tags?.golf === "green" && entry.center)
+    .filter((entry) => ["green", "pin"].includes(entry.tags?.golf))
     .map((entry) => ({
-      lat: Number(entry.center.lat),
-      lng: Number(entry.center.lon),
+      lat: getLat(entry),
+      lng: getLng(entry),
     }))
     .filter((entry) => Number.isFinite(entry.lat) && Number.isFinite(entry.lng));
 
@@ -1399,4 +1408,120 @@ function formatNumber(value) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function getPlayerFederationUi(player) {
+  if (player.validationStatus === "loading") {
+    return {
+      state: "loading",
+      label: "Federación...",
+      note: "Buscando HCP",
+    };
+  }
+
+  if (player.validationStatus === "federation" && player.validatedAt) {
+    return {
+      state: "done",
+      label: "Federación",
+      note: `Act. ${formatShortDate(player.validatedAt)}`,
+    };
+  }
+
+  return {
+    state: "idle",
+    label: "Federación",
+    note: player.license ? "Pendiente" : "Sin licencia",
+  };
+}
+
+function formatShortDate(value) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return "-";
+  }
+  const [year, month, day] = value.split("-");
+  return `${day}/${month}/${year}`;
+}
+
+function scheduleFederationSync() {
+  if (state.view !== "setup" || federationSyncScheduled || federationSyncInProgress) {
+    return;
+  }
+  federationSyncScheduled = true;
+  window.setTimeout(() => {
+    federationSyncScheduled = false;
+    syncFederationHandicaps().catch(() => {});
+  }, 0);
+}
+
+async function syncFederationHandicaps(targetPlayers = players, options = {}) {
+  const force = Boolean(options.force);
+  const candidates = targetPlayers.filter(
+    (player) => player.license && (force || player.validationStatus !== "federation" || player.lastFederationLicense !== player.license),
+  );
+  if (candidates.length === 0 || !RFEG_API_TOKEN) {
+    return;
+  }
+  if (federationSyncInProgress) {
+    await federationSyncPromise;
+    return;
+  }
+  federationSyncInProgress = true;
+  federationSyncPromise = (async () => {
+    const pendingPlayers = candidates.filter((player) => player.validationStatus !== "loading");
+    pendingPlayers.forEach((player) => {
+      player.validationStatus = "loading";
+    });
+
+    if (pendingPlayers.length > 0 && state.view === "setup") {
+      render();
+    }
+
+    await Promise.all(
+      candidates.map(async (player) => {
+        try {
+          const result = await fetchFederationHandicap(player.license);
+          if (!result) {
+            player.validationStatus = "idle";
+            return;
+          }
+          player.handicapIndex = result.handicapIndex;
+          player.validatedAt = result.updatedAt;
+          player.validationStatus = "federation";
+          player.lastFederationLicense = player.license;
+          persistState();
+        } catch {
+          player.validationStatus = "idle";
+        }
+      }),
+    );
+    federationSyncInProgress = false;
+    federationSyncPromise = null;
+
+    if (state.view === "setup") {
+      render();
+    }
+  })();
+  await federationSyncPromise;
+}
+
+async function fetchFederationHandicap(query) {
+  const url = `${RFEG_API_URL}?q=${encodeURIComponent(query)}`;
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${RFEG_API_TOKEN}`,
+    },
+  });
+  if (!response.ok) {
+    return null;
+  }
+  const payload = await response.json();
+  const hit = payload?.data?.hits?.[0]?.document;
+  const handicapIndex = Number(hit?.handicap);
+  if (!Number.isFinite(handicapIndex)) {
+    return null;
+  }
+  return {
+    handicapIndex: clamp(handicapIndex, 0, 54),
+    updatedAt: hit?.date_hdc_updated_at ?? "",
+  };
 }
