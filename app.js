@@ -3,15 +3,20 @@ const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v1";
 const RFEG_HANDICAP_URL = "https://rfeg.es/jugar/handicap";
 const PRIVATE_CONFIG = window.GOLF_PRIVATE_CONFIG ?? {};
 const COURSE_GPS_API = {
-  provider: "generic",
-  enabled: false,
-  baseUrl: "",
+  provider: "osm",
+  enabled: true,
+  baseUrl: "https://overpass-api.de/api/interpreter",
   endpointTemplate: "/courses/{courseId}",
   searchEndpointTemplate: "",
   apiKey: "",
   apiKeyHeader: "Authorization",
   apiKeyPrefix: "Key ",
   ...PRIVATE_CONFIG.courseApi,
+};
+
+const COURSE_OSM_NAMES = {
+  "abama-golf": "Abama Golf",
+  "golf-las-americas": "Golf las Américas",
 };
 
 const defaultPlayers = [
@@ -373,6 +378,7 @@ function createCourse(name, island, config) {
     sourceLabel: config.sourceLabel,
     sourceUrl: config.sourceUrl,
     providerCourseId: null,
+    osmQueryName: COURSE_OSM_NAMES[name.toLowerCase().replaceAll(" ", "-")] ?? name,
     par,
     holes: config.holes.map(([number, parValue, strokeIndex, meters]) => ({
       number,
@@ -884,6 +890,9 @@ function getGpsCourseStatus(course) {
   if (!COURSE_GPS_API.enabled) {
     return "API externa no configurada todavía. Al activarla, se hará una única petición antes de empezar.";
   }
+  if (COURSE_GPS_API.provider === "osm") {
+    return "OSM activa: se hará una única consulta pública antes de empezar y quedará guardada localmente.";
+  }
   if (COURSE_GPS_API.provider === "golfcourseapi") {
     return "Golf Course API activa: se hará una única búsqueda del campo al iniciar y quedará guardada localmente.";
   }
@@ -1053,7 +1062,9 @@ async function ensureCourseGpsData(course) {
 async function fetchCourseGpsPayload(course) {
   try {
     const endpoint =
-      COURSE_GPS_API.provider === "golfcourseapi"
+      COURSE_GPS_API.provider === "osm"
+        ? `?data=${encodeURIComponent(buildOverpassCourseQuery(course))}`
+        : COURSE_GPS_API.provider === "golfcourseapi"
         ? COURSE_GPS_API.searchEndpointTemplate.replace("{searchQuery}", encodeURIComponent(course.name))
         : COURSE_GPS_API.endpointTemplate.replace("{courseId}", encodeURIComponent(course.id));
     const url = new URL(endpoint, COURSE_GPS_API.baseUrl).toString();
@@ -1072,6 +1083,9 @@ async function fetchCourseGpsPayload(course) {
 }
 
 function normalizeCourseGpsPayload(payload, course) {
+  if (COURSE_GPS_API.provider === "osm") {
+    return normalizeOsmPayload(payload, course);
+  }
   if (COURSE_GPS_API.provider === "golfcourseapi") {
     return normalizeGolfCourseApiPayload(payload, course);
   }
@@ -1165,6 +1179,97 @@ function normalizeGolfCourseApiPayload(payload, course) {
       meters: Number.isFinite(Number(hole.meters)) ? Number(hole.meters) : yardsToMeters(Number(hole.yardage)),
     })),
   };
+}
+
+function buildOverpassCourseQuery(course) {
+  const escapedName = String(course.osmQueryName || course.name).replaceAll('"', '\\"');
+  return `
+[out:json][timeout:25];
+(
+  way["leisure"="golf_course"]["name"="${escapedName}"];
+  relation["leisure"="golf_course"]["name"="${escapedName}"];
+)->.course;
+map_to_area .course->.courseArea;
+(
+  way["golf"="hole"](area.courseArea);
+  relation["golf"="hole"](area.courseArea);
+)->.holes;
+(
+  way["golf"="green"](area.courseArea);
+  relation["golf"="green"](area.courseArea);
+)->.greens;
+(
+  .holes;
+  .greens;
+);
+out center tags qt;
+  `.trim();
+}
+
+function normalizeOsmPayload(payload, course) {
+  const elements = Array.isArray(payload?.elements) ? payload.elements : [];
+  const holes = elements
+    .filter((entry) => entry.tags?.golf === "hole" && entry.center && entry.tags?.ref)
+    .map((entry) => ({
+      number: Number(entry.tags.ref),
+      lat: Number(entry.center.lat),
+      lng: Number(entry.center.lon),
+    }))
+    .filter((entry) => Number.isInteger(entry.number));
+  const greens = elements
+    .filter((entry) => entry.tags?.golf === "green" && entry.center)
+    .map((entry) => ({
+      lat: Number(entry.center.lat),
+      lng: Number(entry.center.lon),
+    }))
+    .filter((entry) => Number.isFinite(entry.lat) && Number.isFinite(entry.lng));
+
+  if (holes.length !== course.holesCount || greens.length < course.holesCount) {
+    return null;
+  }
+
+  const assignedGreens = assignGreensToHoles(holes, greens);
+  if (!assignedGreens) {
+    return null;
+  }
+
+  return {
+    providerCourseId: `osm:${course.id}`,
+    holes: assignedGreens.map((entry) => ({
+      number: entry.number,
+      greenCoordinates: entry.greenCoordinates,
+    })),
+  };
+}
+
+function assignGreensToHoles(holes, greens) {
+  const remainingGreens = [...greens];
+  const result = holes
+    .sort((left, right) => left.number - right.number)
+    .map((hole) => {
+      if (remainingGreens.length === 0) {
+        return null;
+      }
+      let closestIndex = 0;
+      let closestDistance = Infinity;
+      remainingGreens.forEach((green, index) => {
+        const distance = haversineMeters(hole.lat, hole.lng, green.lat, green.lng);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closestIndex = index;
+        }
+      });
+      const [green] = remainingGreens.splice(closestIndex, 1);
+      return {
+        number: hole.number,
+        greenCoordinates: { lat: green.lat, lng: green.lng },
+      };
+    });
+
+  if (result.some((entry) => entry === null)) {
+    return null;
+  }
+  return result;
 }
 
 function isCourseNameMatch(entry, course) {
