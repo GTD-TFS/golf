@@ -208,6 +208,8 @@ select {
   border: 1px solid rgba(17, 119, 185, 0.16);
   background: #fff;
   color: var(--ink);
+  min-height: 48px;
+  appearance: auto;
 }
 
 input:focus {

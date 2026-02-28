@@ -416,15 +416,16 @@ function renderSetup() {
     playersList.appendChild(row);
   });
 
-  courses.forEach((course) => {
-    const option = document.createElement("option");
-    option.value = course.id;
-    option.textContent = `${course.name} (${course.island})`;
-    courseSelect.appendChild(option);
-  });
-
   const selectedCourse = getSelectedCourse();
-  courseSelect.value = selectedCourse.id;
+  courseSelect.innerHTML = courses
+    .map(
+      (course) => `
+        <option value="${course.id}" ${course.id === selectedCourse.id ? "selected" : ""}>
+          ${course.name} (${course.island})
+        </option>
+      `,
+    )
+    .join("");
   courseHint.innerHTML = getCourseHint(selectedCourse);
 
   playersList.addEventListener("change", (event) => {
