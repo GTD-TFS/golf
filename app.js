@@ -1,5 +1,5 @@
 const STORAGE_KEY = "golf-canarias-state-v2";
-const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v3";
+const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v4";
 const RFEG_HANDICAP_URL = "https://rfeg.es/jugar/handicap";
 const RFEG_API_URL = "https://api.rfeg.es/web/search/handicap";
 const RFEG_PROXY_PAGE_URL = "https://api.allorigins.win/raw?url=https://rfeg.es/jugar/handicap";
@@ -1407,33 +1407,71 @@ function normalizeOsmPayload(payload, course) {
   const elements = Array.isArray(payload?.elements) ? payload.elements : [];
   const getLat = (entry) => Number(entry.lat ?? entry.center?.lat);
   const getLng = (entry) => Number(entry.lon ?? entry.center?.lon);
-  const holes = elements
-    .filter((entry) => entry.tags?.golf === "hole" && entry.tags?.ref)
-    .map((entry) => ({
-      number: Number(entry.tags.ref),
-      lat: getLat(entry),
-      lng: getLng(entry),
-    }))
-    .filter((entry) => Number.isInteger(entry.number) && Number.isFinite(entry.lat) && Number.isFinite(entry.lng));
-  const greens = elements
-    .filter((entry) => ["green", "pin"].includes(entry.tags?.golf))
-    .map((entry) => ({
-      lat: getLat(entry),
-      lng: getLng(entry),
-    }))
-    .filter((entry) => Number.isFinite(entry.lat) && Number.isFinite(entry.lng));
+  const holes = [];
+  const tees = [];
+  const explicitGreens = [];
+  const looseGreens = [];
 
-  if (holes.length === course.holesCount && greens.length >= course.holesCount) {
-    const assignedGreens = assignGreensToHoles(holes, greens);
-    if (assignedGreens) {
-      return {
-        providerCourseId: `osm:${course.id}`,
-        holes: assignedGreens.map((entry) => ({
-          number: entry.number,
-          greenCoordinates: entry.greenCoordinates,
-        })),
-      };
+  elements.forEach((entry) => {
+    const lat = getLat(entry);
+    const lng = getLng(entry);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return;
     }
+
+    const golfType = entry.tags?.golf;
+    const numberedRef = golfType === "hole" && entry.tags?.ref ? Number(entry.tags.ref) : extractHoleNumberFromTags(entry.tags);
+
+    if (golfType === "hole" && Number.isInteger(numberedRef)) {
+      holes.push({ number: numberedRef, lat, lng });
+      return;
+    }
+
+    if (golfType === "tee" && Number.isInteger(numberedRef)) {
+      tees.push({ number: numberedRef, lat, lng });
+      return;
+    }
+
+    if (["green", "pin"].includes(golfType)) {
+      if (Number.isInteger(numberedRef)) {
+        explicitGreens.push({ number: numberedRef, lat, lng });
+      } else {
+        looseGreens.push({ lat, lng });
+      }
+    }
+  });
+
+  const exactMap = buildExactGreenMap(explicitGreens, course.holesCount);
+  if (exactMap) {
+    return {
+      providerCourseId: `osm:${course.id}`,
+      holes: exactMap.map((entry) => ({
+        number: entry.number,
+        greenCoordinates: entry.greenCoordinates,
+      })),
+    };
+  }
+
+  const fromHoles = buildMixedGreenMap(holes, explicitGreens, looseGreens, course.holesCount);
+  if (fromHoles) {
+    return {
+      providerCourseId: `osm:${course.id}`,
+      holes: fromHoles.map((entry) => ({
+        number: entry.number,
+        greenCoordinates: entry.greenCoordinates,
+      })),
+    };
+  }
+
+  const fromTees = buildMixedGreenMap(tees, explicitGreens, looseGreens, course.holesCount);
+  if (fromTees) {
+    return {
+      providerCourseId: `osm:${course.id}`,
+      holes: fromTees.map((entry) => ({
+        number: entry.number,
+        greenCoordinates: entry.greenCoordinates,
+      })),
+    };
   }
 
   return null;
@@ -1467,6 +1505,113 @@ function assignGreensToHoles(holes, greens) {
     return null;
   }
   return result;
+}
+
+function buildExactGreenMap(explicitGreens, holesCount) {
+  const unique = dedupeNumberedPoints(explicitGreens);
+  if (unique.length !== holesCount) {
+    return null;
+  }
+  return unique
+    .sort((left, right) => left.number - right.number)
+    .map((entry) => ({
+      number: entry.number,
+      greenCoordinates: { lat: entry.lat, lng: entry.lng },
+    }));
+}
+
+function buildMixedGreenMap(referencePoints, explicitGreens, looseGreens, holesCount) {
+  const uniqueRefs = dedupeNumberedPoints(referencePoints);
+  const exactByNumber = new Map(
+    dedupeNumberedPoints(explicitGreens).map((entry) => [entry.number, { lat: entry.lat, lng: entry.lng }]),
+  );
+  const referenceByNumber = new Map(uniqueRefs.map((entry) => [entry.number, entry]));
+  const allNumbers = new Set([...exactByNumber.keys(), ...referenceByNumber.keys()]);
+  if (allNumbers.size !== holesCount) {
+    return null;
+  }
+
+  const orderedNumbers = [...allNumbers].sort((left, right) => left - right);
+  const remainingRefs = [];
+  const result = orderedNumbers.map((number) => {
+      const exact = exactByNumber.get(number);
+      if (exact) {
+        return {
+          number,
+          greenCoordinates: exact,
+        };
+      }
+      const reference = referenceByNumber.get(number);
+      if (!reference) {
+        return null;
+      }
+      remainingRefs.push(reference);
+      return null;
+    });
+
+  if (result.some((entry) => entry === null) && remainingRefs.length === 0) {
+    return null;
+  }
+  if (remainingRefs.length === 0) {
+    return result;
+  }
+  if (looseGreens.length < remainingRefs.length) {
+    return null;
+  }
+
+  const assigned = assignGreensToHoles(remainingRefs, looseGreens);
+  if (!assigned) {
+    return null;
+  }
+  const assignedByNumber = new Map(assigned.map((entry) => [entry.number, entry.greenCoordinates]));
+  const merged = result.map((entry, index) =>
+    entry ??
+    (() => {
+      const number = orderedNumbers[index];
+      const greenCoordinates = assignedByNumber.get(number);
+      if (!greenCoordinates) {
+        return null;
+      }
+      return {
+        number,
+        greenCoordinates,
+      };
+    })(),
+  );
+
+  if (merged.some((entry) => entry === null)) {
+    return null;
+  }
+  return merged;
+}
+
+function dedupeNumberedPoints(entries) {
+  const seen = new Set();
+  return entries.filter((entry) => {
+    if (!Number.isInteger(entry.number) || seen.has(entry.number)) {
+      return false;
+    }
+    seen.add(entry.number);
+    return true;
+  });
+}
+
+function extractHoleNumberFromTags(tags) {
+  if (!tags) {
+    return null;
+  }
+
+  for (const value of Object.values(tags)) {
+    const match = String(value).match(/(?:^|[^0-9])(1[0-8]|[1-9])(?:[^0-9]|$)/);
+    if (match) {
+      const number = Number(match[1]);
+      if (Number.isInteger(number)) {
+        return number;
+      }
+    }
+  }
+
+  return null;
 }
 
 function isCourseNameMatch(entry, course) {
