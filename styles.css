@@ -20,7 +20,7 @@ body {
   font-family: "Barlow", sans-serif;
   background:
     linear-gradient(180deg, rgba(225, 244, 255, 0.62), rgba(241, 250, 255, 0.8)),
-    url("./golf-background.svg") center / cover no-repeat fixed;
+    url("./IMG_3935.JPG") center center / cover no-repeat fixed;
   color: var(--ink);
 }
 
@@ -155,7 +155,7 @@ body[data-view="game"] .hero {
   align-items: start;
   padding: 5px 7px;
   border-radius: 12px;
-  background: linear-gradient(180deg, rgba(223, 241, 255, 0.95), rgba(255, 255, 255, 0.95));
+  background: linear-gradient(180deg, rgba(114, 195, 82, 0.28), rgba(255, 255, 255, 0.96));
   border: 1px solid var(--line);
 }
 
@@ -418,9 +418,12 @@ button:disabled {
   line-height: 1;
 }
 
-.distance-inline[data-enabled="false"] .gps-icon,
-.distance-inline[data-enabled="false"] strong {
-  opacity: 0.72;
+.distance-inline[data-enabled="false"] .distance-copy {
+  display: none;
+}
+
+.distance-inline[data-enabled="true"] .gps-icon {
+  display: none;
 }
 
 .distance-inline strong {
@@ -566,7 +569,7 @@ button:disabled {
 }
 
 .game-screen {
-  padding-bottom: 128px;
+  padding-bottom: 84px;
 }
 
 .game-dock {

@@ -620,7 +620,7 @@ function renderGame() {
   document.querySelector("#current-hole-number").textContent = hole.number;
   document.querySelector("#current-hole-par").textContent = hole.par;
   document.querySelector("#current-hole-hcp").textContent = hole.strokeIndex;
-  document.querySelector("#current-hole-yardage").textContent = formatGpsDistance(hole);
+  document.querySelector("#current-hole-yardage").textContent = state.gps.enabled ? formatGpsDistance(hole) : "";
   gpsToggle.dataset.enabled = state.gps.enabled ? "true" : "false";
   document.querySelector("#hole-total-yardage").textContent = `${hole.meters}m`;
   matchTitle.textContent = `${activePlayers.map((player) => player.name.split(" ")[0]).join(" vs ")} · ${course.name}`;
@@ -1186,7 +1186,7 @@ function updateGpsDistance(hole) {
 
 function formatGpsDistance(hole) {
   if (!state.gps.enabled) {
-    return "OFF";
+    return "";
   }
   if (state.gps.distanceMeters != null) {
     return `${state.gps.distanceMeters}m`;
