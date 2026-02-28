@@ -1,5 +1,5 @@
 const STORAGE_KEY = "golf-canarias-state-v2";
-const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v7";
+const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v8";
 const RFEG_HANDICAP_URL = "https://rfeg.es/jugar/handicap";
 const RFEG_API_URL = "https://api.rfeg.es/web/search/handicap";
 const RFEG_PROXY_PAGE_URL = "https://api.allorigins.win/raw?url=https://rfeg.es/jugar/handicap";
@@ -99,6 +99,7 @@ const courseCatalog = [
 
 const verifiedCourseConfigs = {
   "abama-golf": {
+    exactGreens: true,
     sourceLabel: "Tarjeta oficial verificada",
     sourceUrl: "https://www.abamagolf.com/es/campo-de-golf-tenerife",
     tee: "Amarillas",
@@ -153,6 +154,7 @@ const verifiedCourseConfigs = {
     ],
   },
   "golf-costa-adeje": {
+    exactGreens: true,
     sourceLabel: "Tarjeta oficial + greens OSM fijados",
     sourceUrl: "https://www.golfcostaadeje.com/fr/championship-parcour/",
     tee: "59",
@@ -180,6 +182,7 @@ const verifiedCourseConfigs = {
     ],
   },
   "buenavista-golf": {
+    exactGreens: true,
     sourceLabel: "Scorecard público estructurado verificado",
     sourceUrl: "https://www.golfify.io/courses/buenavista-golf-s-a",
     tee: "Amarillos",
@@ -428,7 +431,7 @@ function createCourse(name, island, config) {
       greenCenter: Math.max(20, meters - 6),
       greenBack: meters + 10,
       greenCoordinates:
-        Number.isFinite(greenLat) && Number.isFinite(greenLng)
+        config.exactGreens === true && Number.isFinite(greenLat) && Number.isFinite(greenLng)
           ? {
               lat: greenLat,
               lng: greenLng,
@@ -1518,10 +1521,7 @@ function normalizeOsmPayload(payload, course) {
   const elements = Array.isArray(payload?.elements) ? payload.elements : [];
   const getLat = (entry) => Number(entry.lat ?? entry.center?.lat);
   const getLng = (entry) => Number(entry.lon ?? entry.center?.lon);
-  const holes = [];
-  const tees = [];
   const explicitGreens = [];
-  const looseGreens = [];
 
   elements.forEach((entry) => {
     const lat = getLat(entry);
@@ -1533,21 +1533,9 @@ function normalizeOsmPayload(payload, course) {
     const golfType = entry.tags?.golf;
     const numberedRef = golfType === "hole" && entry.tags?.ref ? Number(entry.tags.ref) : extractHoleNumberFromTags(entry.tags);
 
-    if (golfType === "hole" && Number.isInteger(numberedRef)) {
-      holes.push({ number: numberedRef, lat, lng });
-      return;
-    }
-
-    if (golfType === "tee" && Number.isInteger(numberedRef)) {
-      tees.push({ number: numberedRef, lat, lng });
-      return;
-    }
-
     if (["green", "pin"].includes(golfType)) {
       if (Number.isInteger(numberedRef)) {
         explicitGreens.push({ number: numberedRef, lat, lng });
-      } else {
-        looseGreens.push({ lat, lng });
       }
     }
   });
@@ -1557,30 +1545,6 @@ function normalizeOsmPayload(payload, course) {
     const normalized = {
       providerCourseId: `osm:${course.id}`,
       holes: exactMap.map((entry) => ({
-        number: entry.number,
-        greenCoordinates: entry.greenCoordinates,
-      })),
-    };
-    return isUsableGpsData(normalized, course.holesCount) ? normalized : null;
-  }
-
-  const fromHoles = buildMixedGreenMap(holes, explicitGreens, looseGreens, course.holesCount);
-  if (fromHoles) {
-    const normalized = {
-      providerCourseId: `osm:${course.id}`,
-      holes: fromHoles.map((entry) => ({
-        number: entry.number,
-        greenCoordinates: entry.greenCoordinates,
-      })),
-    };
-    return isUsableGpsData(normalized, course.holesCount) ? normalized : null;
-  }
-
-  const fromTees = buildMixedGreenMap(tees, explicitGreens, looseGreens, course.holesCount);
-  if (fromTees) {
-    const normalized = {
-      providerCourseId: `osm:${course.id}`,
-      holes: fromTees.map((entry) => ({
         number: entry.number,
         greenCoordinates: entry.greenCoordinates,
       })),
