@@ -26,7 +26,7 @@ const defaultPlayers = [
     license: "CP41742315",
     handicapIndex: 18.4,
     selected: true,
-    validatedAt: "Auto",
+    validatedAt: "Local",
   },
   {
     id: "javier",
@@ -34,7 +34,7 @@ const defaultPlayers = [
     license: "CM00472449",
     handicapIndex: 28.6,
     selected: true,
-    validatedAt: "Auto",
+    validatedAt: "Local",
   },
 ];
 
@@ -433,8 +433,8 @@ function renderSetup() {
         />
       </div>
       <div class="player-actions">
-        <span class="compact-button" data-state="done">HCP Auto</span>
-        <span class="validation-note">Persistente local</span>
+        <span class="compact-button" data-state="done">HCP Local</span>
+        <span class="validation-note">No federación</span>
       </div>
     `;
     playersList.appendChild(row);
@@ -925,7 +925,7 @@ function loadPlayers() {
       license: entry.license ?? "",
       handicapIndex: entry.handicapIndex ?? 0,
       selected: entry.selected ?? true,
-      validatedAt: entry.validatedAt ?? "Auto",
+      validatedAt: entry.validatedAt ?? "Local",
     }));
 
   extras.forEach(refreshPlayerValidation);
@@ -1039,7 +1039,7 @@ function formatGpsDistance() {
   if (state.gps.status === "unsupported") {
     return "Sin GPS";
   }
-  return "--";
+  return "Sin green";
 }
 
 function haversineMeters(lat1, lng1, lat2, lng2) {
@@ -1087,7 +1087,7 @@ function addPlayer() {
     license,
     handicapIndex: Number.isFinite(handicapIndex) ? handicapIndex : 0,
     selected: true,
-    validatedAt: "Auto",
+    validatedAt: "Local",
   });
   persistState();
   render();
@@ -1097,7 +1097,7 @@ function refreshPlayerValidation(player) {
   if (!player) {
     return;
   }
-  player.validatedAt = "Auto";
+  player.validatedAt = "Local";
 }
 
 function hasCachedGpsData(courseId) {
