@@ -1,12 +1,17 @@
 const STORAGE_KEY = "golf-canarias-state-v2";
 const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v1";
 const RFEG_HANDICAP_URL = "https://rfeg.es/jugar/handicap";
+const PRIVATE_CONFIG = window.GOLF_PRIVATE_CONFIG ?? {};
 const COURSE_GPS_API = {
+  provider: "generic",
   enabled: false,
   baseUrl: "",
   endpointTemplate: "/courses/{courseId}",
+  searchEndpointTemplate: "",
   apiKey: "",
-  apiKeyHeader: "x-api-key",
+  apiKeyHeader: "Authorization",
+  apiKeyPrefix: "Key ",
+  ...PRIVATE_CONFIG.courseApi,
 };
 
 const defaultPlayers = [
@@ -367,6 +372,7 @@ function createCourse(name, island, config) {
     handicapFactor: config.handicapFactor ?? 1,
     sourceLabel: config.sourceLabel,
     sourceUrl: config.sourceUrl,
+    providerCourseId: null,
     par,
     holes: config.holes.map(([number, parValue, strokeIndex, meters]) => ({
       number,
@@ -682,8 +688,7 @@ async function startMatch() {
 
   const gpsReady = await ensureCourseGpsData(course);
   if (COURSE_GPS_API.enabled && !gpsReady) {
-    alert("No se pudieron cargar los puntos GPS del campo. Revisa la API o vuelve a intentarlo.");
-    return;
+    console.warn(`No se encontraron datos externos para ${course.name}. Se usa la tarjeta local.`);
   }
 
   state.scores = Object.fromEntries(
@@ -874,12 +879,15 @@ function getGpsCourseStatus(course) {
     return "GPS del campo no disponible.";
   }
   if (hasCachedGpsData(course.id)) {
-    return "GPS del campo en caché local: no hará más peticiones durante la partida.";
+    return "Datos del campo en caché local: no hará más peticiones durante la partida.";
   }
   if (!COURSE_GPS_API.enabled) {
-    return "API GPS no configurada todavía. Al activarla, se hará una única petición antes de empezar.";
+    return "API externa no configurada todavía. Al activarla, se hará una única petición antes de empezar.";
   }
-  return "API GPS activa: se hará una única petición al iniciar y quedará guardado localmente.";
+  if (COURSE_GPS_API.provider === "golfcourseapi") {
+    return "Golf Course API activa: se hará una única búsqueda del campo al iniciar y quedará guardada localmente.";
+  }
+  return "API activa: se hará una única petición al iniciar y quedará guardado localmente.";
 }
 
 function loadPlayers() {
@@ -1026,7 +1034,7 @@ async function ensureCourseGpsData(course) {
     return false;
   }
 
-  const payload = await fetchCourseGpsPayload(course.id);
+  const payload = await fetchCourseGpsPayload(course);
   if (!payload) {
     return false;
   }
@@ -1042,13 +1050,16 @@ async function ensureCourseGpsData(course) {
   return true;
 }
 
-async function fetchCourseGpsPayload(courseId) {
+async function fetchCourseGpsPayload(course) {
   try {
-    const endpoint = COURSE_GPS_API.endpointTemplate.replace("{courseId}", encodeURIComponent(courseId));
+    const endpoint =
+      COURSE_GPS_API.provider === "golfcourseapi"
+        ? COURSE_GPS_API.searchEndpointTemplate.replace("{searchQuery}", encodeURIComponent(course.name))
+        : COURSE_GPS_API.endpointTemplate.replace("{courseId}", encodeURIComponent(course.id));
     const url = new URL(endpoint, COURSE_GPS_API.baseUrl).toString();
     const headers = {};
     if (COURSE_GPS_API.apiKey) {
-      headers[COURSE_GPS_API.apiKeyHeader] = COURSE_GPS_API.apiKey;
+      headers[COURSE_GPS_API.apiKeyHeader] = `${COURSE_GPS_API.apiKeyPrefix ?? ""}${COURSE_GPS_API.apiKey}`;
     }
     const response = await fetch(url, { headers });
     if (!response.ok) {
@@ -1061,6 +1072,10 @@ async function fetchCourseGpsPayload(courseId) {
 }
 
 function normalizeCourseGpsPayload(payload, course) {
+  if (COURSE_GPS_API.provider === "golfcourseapi") {
+    return normalizeGolfCourseApiPayload(payload, course);
+  }
+
   const incomingHoles = Array.isArray(payload?.holes) ? payload.holes : Array.isArray(payload) ? payload : null;
   if (!incomingHoles) {
     return null;
@@ -1090,12 +1105,100 @@ function normalizeCourseGpsPayload(payload, course) {
 }
 
 function applyGpsDataToCourse(course, gpsData) {
-  course.holes.forEach((hole) => {
-    const match = gpsData.holes.find((entry) => entry.number === hole.number);
-    if (match) {
+  if (gpsData.tee) {
+    course.tee = gpsData.tee.tee_name ?? course.tee;
+    course.slope = gpsData.tee.slope_rating ?? course.slope;
+    course.courseRating = gpsData.tee.course_rating ?? course.courseRating;
+    course.par = gpsData.tee.par_total ?? course.par;
+  }
+
+  if (gpsData.providerCourseId) {
+    course.providerCourseId = gpsData.providerCourseId;
+  }
+
+  course.holes.forEach((hole, index) => {
+    const match = gpsData.holes.find((entry) => entry.number === hole.number) ?? gpsData.holes[index];
+    if (!match) {
+      return;
+    }
+    if (match.par != null) {
+      hole.par = match.par;
+    }
+    if (match.handicap != null) {
+      hole.strokeIndex = match.handicap;
+    }
+    if (match.meters != null) {
+      hole.meters = match.meters;
+      hole.greenFront = Math.max(30, hole.meters - 18);
+      hole.greenCenter = Math.max(20, hole.meters - 6);
+      hole.greenBack = hole.meters + 10;
+    }
+    if (match.greenCoordinates) {
       hole.greenCoordinates = match.greenCoordinates;
     }
   });
+}
+
+function normalizeGolfCourseApiPayload(payload, course) {
+  const coursesResult = Array.isArray(payload?.courses) ? payload.courses : [];
+  if (coursesResult.length === 0) {
+    return null;
+  }
+
+  const match =
+    coursesResult.find((entry) => isCourseNameMatch(entry, course)) ??
+    coursesResult.find((entry) => String(entry.course_name || "").toLowerCase().includes(course.name.toLowerCase())) ??
+    coursesResult[0];
+
+  const tee = pickGolfCourseApiTee(match, course);
+  if (!tee || !Array.isArray(tee.holes) || tee.holes.length !== course.holesCount) {
+    return null;
+  }
+
+  return {
+    providerCourseId: match.id ?? null,
+    tee,
+    holes: tee.holes.map((hole, index) => ({
+      number: index + 1,
+      par: Number(hole.par),
+      handicap: Number(hole.handicap),
+      meters: Number.isFinite(Number(hole.meters)) ? Number(hole.meters) : yardsToMeters(Number(hole.yardage)),
+    })),
+  };
+}
+
+function isCourseNameMatch(entry, course) {
+  const candidate = normalizeName(`${entry.club_name ?? ""} ${entry.course_name ?? ""}`);
+  const target = normalizeName(course.name);
+  return candidate.includes(target) || target.includes(normalizeName(entry.course_name ?? ""));
+}
+
+function pickGolfCourseApiTee(entry, course) {
+  const tees = [...(entry?.tees?.male ?? []), ...(entry?.tees?.female ?? [])].filter(
+    (tee) => tee.number_of_holes === course.holesCount && Array.isArray(tee.holes) && tee.holes.length === course.holesCount,
+  );
+  if (tees.length === 0) {
+    return null;
+  }
+
+  return tees.sort((left, right) => {
+    const leftDelta = Math.abs((left.total_meters ?? yardsToMeters(left.total_yards ?? 0)) - course.holes.reduce((sum, hole) => sum + hole.meters, 0));
+    const rightDelta = Math.abs((right.total_meters ?? yardsToMeters(right.total_yards ?? 0)) - course.holes.reduce((sum, hole) => sum + hole.meters, 0));
+    return leftDelta - rightDelta;
+  })[0];
+}
+
+function normalizeName(value) {
+  return value
+    .normalize("NFD")
+    .replaceAll(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function yardsToMeters(yards) {
+  return Math.round((yards || 0) * 0.9144);
 }
 
 function slugify(value) {

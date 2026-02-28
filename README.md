@@ -20,6 +20,7 @@ Archivos principales:
 Configuracion API GPS:
 
 - Edita `COURSE_GPS_API` en `app.js`.
+- Golf Course API usa autenticacion en cabecera con formato `Authorization: Key TU_API_KEY`.
 - La app esta preparada para hacer una sola peticion por campo antes de comenzar el partido.
 - El payload esperado admite `holes` con `number` y `greenCoordinates` (`lat`, `lng`) o variantes equivalentes.
 - Tras cargarlo una vez, queda guardado en `localStorage` y no vuelve a pedirlo durante la partida.
