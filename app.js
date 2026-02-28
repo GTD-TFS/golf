@@ -1,8 +1,10 @@
 const STORAGE_KEY = "golf-canarias-state-v2";
-const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v2";
+const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v3";
 const RFEG_HANDICAP_URL = "https://rfeg.es/jugar/handicap";
 const RFEG_API_URL = "https://api.rfeg.es/web/search/handicap";
 const RFEG_PROXY_PAGE_URL = "https://api.allorigins.win/raw?url=https://rfeg.es/jugar/handicap";
+const OPEN_PROXY_BASE_URL = "https://api.allorigins.win/raw?url=";
+const NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search";
 const PRIVATE_CONFIG = window.GOLF_PRIVATE_CONFIG ?? {};
 const COURSE_GPS_API = {
   provider: "osm",
@@ -325,6 +327,7 @@ let rfegTokenCache = {
   value: PRIVATE_CONFIG.rfegToken ?? "",
   fetchedAt: PRIVATE_CONFIG.rfegToken ? Date.now() : 0,
 };
+let rfegTokenPromise = null;
 
 const courses = courseCatalog.map((course) => {
   const id = slugify(course.name);
@@ -388,6 +391,7 @@ function createCourse(name, island, config) {
     sourceLabel: config.sourceLabel,
     sourceUrl: config.sourceUrl,
     providerCourseId: null,
+    courseCenterCoordinates: null,
     osmQueryName: COURSE_OSM_NAMES[name.toLowerCase().replaceAll(" ", "-")] ?? name,
     par,
     holes: config.holes.map(([number, parValue, strokeIndex, meters]) => ({
@@ -1038,13 +1042,18 @@ function requestCurrentPosition() {
 }
 
 function updateGpsDistance(hole) {
-  if (!hole.greenCoordinates || !state.gps.userPosition) {
+  const course = getSelectedCourse();
+  const target =
+    hole.greenCoordinates ??
+    hole.targetCoordinates ??
+    course.courseCenterCoordinates;
+  if (!target || !state.gps.userPosition) {
     state.gps.distanceMeters = null;
     return;
   }
 
   state.gps.distanceMeters = Math.round(
-    haversineMeters(state.gps.userPosition.lat, state.gps.userPosition.lng, hole.greenCoordinates.lat, hole.greenCoordinates.lng),
+    haversineMeters(state.gps.userPosition.lat, state.gps.userPosition.lng, target.lat, target.lng),
   );
 }
 
@@ -1136,7 +1145,8 @@ function refreshPlayerValidation(player) {
 }
 
 function hasCachedGpsData(courseId) {
-  return Array.isArray(courseDataCache[courseId]?.holes) && courseDataCache[courseId].holes.length > 0;
+  const cached = courseDataCache[courseId];
+  return Boolean(cached && (Array.isArray(cached.holes) || cached.courseCenterCoordinates));
 }
 
 async function ensureCourseGpsData(course) {
@@ -1153,12 +1163,8 @@ async function ensureCourseGpsData(course) {
     return false;
   }
 
-  const payload = await fetchCourseGpsPayload(course);
-  if (!payload) {
-    return false;
-  }
-
-  const normalized = normalizeCourseGpsPayload(payload, course);
+  const normalized =
+    COURSE_GPS_API.provider === "osm" ? await fetchOsmCourseData(course) : normalizeCourseGpsPayload(await fetchCourseGpsPayload(course), course);
   if (!normalized) {
     return false;
   }
@@ -1183,6 +1189,70 @@ async function fetchCourseGpsPayload(course) {
       headers[COURSE_GPS_API.apiKeyHeader] = `${COURSE_GPS_API.apiKeyPrefix ?? ""}${COURSE_GPS_API.apiKey}`;
     }
     const response = await fetch(url, { headers });
+    if (!response.ok) {
+      return null;
+    }
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+async function fetchOsmCourseData(course) {
+  const geo = await fetchCourseGeocode(course);
+  if (!geo) {
+    return null;
+  }
+
+  const byAreaPayload = await fetchJsonViaProxy(new URL(`?data=${encodeURIComponent(buildOverpassCourseQuery(course))}`, COURSE_GPS_API.baseUrl).toString());
+  let normalized = normalizeOsmPayload(byAreaPayload, course);
+  if (!normalized && geo.boundingBox) {
+    const bboxPayload = await fetchJsonViaProxy(new URL(`?data=${encodeURIComponent(buildOverpassBboxQuery(geo.boundingBox))}`, COURSE_GPS_API.baseUrl).toString());
+    normalized = normalizeOsmPayload(bboxPayload, course);
+  }
+
+  if (!normalized) {
+    return {
+      providerCourseId: `osm:${course.id}`,
+      courseCenterCoordinates: geo.center,
+      holes: [],
+    };
+  }
+
+  normalized.courseCenterCoordinates = geo.center;
+  return normalized;
+}
+
+async function fetchCourseGeocode(course) {
+  const query = `${course.osmQueryName}, ${course.island}, Canarias, España`;
+  const url = `${NOMINATIM_SEARCH_URL}?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`;
+  const results = await fetchJsonViaProxy(url);
+  const hit = Array.isArray(results) ? results[0] : null;
+  if (!hit) {
+    return null;
+  }
+
+  const south = Number(hit.boundingbox?.[0]);
+  const north = Number(hit.boundingbox?.[1]);
+  const west = Number(hit.boundingbox?.[2]);
+  const east = Number(hit.boundingbox?.[3]);
+
+  return {
+    center: {
+      lat: Number(hit.lat),
+      lng: Number(hit.lon),
+    },
+    boundingBox:
+      [south, west, north, east].every((value) => Number.isFinite(value))
+        ? { south, west, north, east }
+        : null,
+  };
+}
+
+async function fetchJsonViaProxy(url) {
+  try {
+    const proxiedUrl = `${OPEN_PROXY_BASE_URL}${encodeURIComponent(url)}`;
+    const response = await fetch(proxiedUrl);
     if (!response.ok) {
       return null;
     }
@@ -1239,6 +1309,9 @@ function applyGpsDataToCourse(course, gpsData) {
   if (gpsData.providerCourseId) {
     course.providerCourseId = gpsData.providerCourseId;
   }
+  if (gpsData.courseCenterCoordinates) {
+    course.courseCenterCoordinates = gpsData.courseCenterCoordinates;
+  }
 
   course.holes.forEach((hole, index) => {
     const match = gpsData.holes.find((entry) => entry.number === hole.number) ?? gpsData.holes[index];
@@ -1259,6 +1332,9 @@ function applyGpsDataToCourse(course, gpsData) {
     }
     if (match.greenCoordinates) {
       hole.greenCoordinates = match.greenCoordinates;
+    }
+    if (match.targetCoordinates) {
+      hole.targetCoordinates = match.targetCoordinates;
     }
   });
 }
@@ -1312,6 +1388,18 @@ out center tags qt;
   `.trim();
 }
 
+function buildOverpassBboxQuery(boundingBox) {
+  return `
+[out:json][timeout:25];
+(
+  node["golf"~"^(hole|green|pin)$"](${boundingBox.south},${boundingBox.west},${boundingBox.north},${boundingBox.east});
+  way["golf"~"^(hole|green|pin)$"](${boundingBox.south},${boundingBox.west},${boundingBox.north},${boundingBox.east});
+  relation["golf"~"^(hole|green|pin)$"](${boundingBox.south},${boundingBox.west},${boundingBox.north},${boundingBox.east});
+);
+out center tags qt;
+  `.trim();
+}
+
 function normalizeOsmPayload(payload, course) {
   const elements = Array.isArray(payload?.elements) ? payload.elements : [];
   const getLat = (entry) => Number(entry.lat ?? entry.center?.lat);
@@ -1332,22 +1420,33 @@ function normalizeOsmPayload(payload, course) {
     }))
     .filter((entry) => Number.isFinite(entry.lat) && Number.isFinite(entry.lng));
 
-  if (holes.length !== course.holesCount || greens.length < course.holesCount) {
-    return null;
+  if (holes.length === course.holesCount && greens.length >= course.holesCount) {
+    const assignedGreens = assignGreensToHoles(holes, greens);
+    if (assignedGreens) {
+      return {
+        providerCourseId: `osm:${course.id}`,
+        holes: assignedGreens.map((entry) => ({
+          number: entry.number,
+          greenCoordinates: entry.greenCoordinates,
+          targetCoordinates: entry.greenCoordinates,
+        })),
+      };
+    }
   }
 
-  const assignedGreens = assignGreensToHoles(holes, greens);
-  if (!assignedGreens) {
-    return null;
+  if (holes.length === course.holesCount) {
+    return {
+      providerCourseId: `osm:${course.id}`,
+      holes: holes
+        .sort((left, right) => left.number - right.number)
+        .map((entry) => ({
+          number: entry.number,
+          targetCoordinates: { lat: entry.lat, lng: entry.lng },
+        })),
+    };
   }
 
-  return {
-    providerCourseId: `osm:${course.id}`,
-    holes: assignedGreens.map((entry) => ({
-      number: entry.number,
-      greenCoordinates: entry.greenCoordinates,
-    })),
-  };
+  return null;
 }
 
 function assignGreensToHoles(holes, greens) {
@@ -1548,16 +1647,27 @@ async function syncFederationHandicaps(targetPlayers = players, options = {}) {
 }
 
 async function fetchFederationHandicap(query) {
-  const token = await getCurrentRfegToken();
+  let token = await getCurrentRfegToken();
   if (!token) {
     return null;
   }
   const url = `${RFEG_API_URL}?q=${encodeURIComponent(query)}`;
-  const response = await fetch(url, {
+  let response = await fetch(url, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
   });
+  if (response.status === 401) {
+    token = await getCurrentRfegToken(true);
+    if (!token) {
+      return null;
+    }
+    response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  }
   if (!response.ok) {
     return null;
   }
@@ -1573,24 +1683,38 @@ async function fetchFederationHandicap(query) {
   };
 }
 
-async function getCurrentRfegToken() {
+async function getCurrentRfegToken(forceRefresh = false) {
   const now = Date.now();
-  if (rfegTokenCache.value && now - rfegTokenCache.fetchedAt < 5 * 60 * 1000) {
+  if (!forceRefresh && rfegTokenCache.value && now - rfegTokenCache.fetchedAt < 5 * 60 * 1000) {
     return rfegTokenCache.value;
   }
+  if (!forceRefresh && rfegTokenPromise) {
+    return await rfegTokenPromise;
+  }
 
-  const response = await fetch(RFEG_PROXY_PAGE_URL);
-  if (!response.ok) {
-    return "";
-  }
-  const html = await response.text();
-  const match = html.match(/App\.page\.init\("jugar",\s*'([^']+)'/);
-  if (!match?.[1]) {
-    return "";
-  }
-  rfegTokenCache = {
-    value: match[1],
-    fetchedAt: now,
-  };
-  return rfegTokenCache.value;
+  rfegTokenPromise = (async () => {
+    try {
+      const response = await fetch(RFEG_PROXY_PAGE_URL);
+      if (!response.ok) {
+        rfegTokenPromise = null;
+        return "";
+      }
+      const html = await response.text();
+      const match = html.match(/App\.page\.init\("jugar",\s*'([^']+)'/);
+      if (!match?.[1]) {
+        rfegTokenPromise = null;
+        return "";
+      }
+      rfegTokenCache = {
+        value: match[1],
+        fetchedAt: Date.now(),
+      };
+      rfegTokenPromise = null;
+      return rfegTokenCache.value;
+    } catch {
+      rfegTokenPromise = null;
+      return "";
+    }
+  })();
+  return await rfegTokenPromise;
 }
