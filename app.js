@@ -6,6 +6,7 @@ const RFEG_PROXY_PAGE_URL = "https://api.allorigins.win/raw?url=https://rfeg.es/
 const OPEN_PROXY_BASE_URL = "https://api.allorigins.win/raw?url=";
 const NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search";
 const NETWORK_TIMEOUT_MS = 12000;
+const OVERPASS_TIMEOUT_SECONDS = 60;
 const PRIVATE_CONFIG = window.GOLF_PRIVATE_CONFIG ?? {};
 const COURSE_GPS_API = {
   provider: "osm",
@@ -1449,7 +1450,7 @@ function buildOverpassObjectQuery(course) {
       return "";
     }
     return `
-[out:json][timeout:25];
+[out:json][timeout:${OVERPASS_TIMEOUT_SECONDS}];
 ${elementKeyword}(${course.osmElementId});
 map_to_area;
 (
@@ -1467,7 +1468,7 @@ out geom center tags qt;
 function buildOverpassNamedCourseQuery(course) {
   const escapedName = String(course.osmQueryName || course.name).replaceAll('"', '\\"');
   return `
-[out:json][timeout:25];
+[out:json][timeout:${OVERPASS_TIMEOUT_SECONDS}];
 nwr["leisure"="golf_course"]["name"="${escapedName}"]->.course;
 .course map_to_area -> .courseArea;
 (
@@ -1481,7 +1482,7 @@ out geom center tags qt;
 
 function buildOverpassBboxQuery(boundingBox) {
   return `
-[out:json][timeout:25];
+[out:json][timeout:${OVERPASS_TIMEOUT_SECONDS}];
 (
   node["golf"~"^(hole|green|pin|tee)$"](${boundingBox.south},${boundingBox.west},${boundingBox.north},${boundingBox.east});
   way["golf"~"^(hole|green|pin|tee)$"](${boundingBox.south},${boundingBox.west},${boundingBox.north},${boundingBox.east});
