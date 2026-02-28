@@ -528,7 +528,7 @@ function renderGame() {
   document.querySelector("#current-hole-number").textContent = hole.number;
   document.querySelector("#current-hole-par").textContent = hole.par;
   document.querySelector("#current-hole-hcp").textContent = hole.strokeIndex;
-  document.querySelector("#current-hole-yardage").textContent = formatDistance(hole);
+  document.querySelector("#current-hole-yardage").textContent = formatGpsDistance();
   document.querySelector("#hole-total-yardage").textContent = `${hole.meters}m`;
   matchTitle.textContent = `${activePlayers.map((player) => player.name.split(" ")[0]).join(" vs ")} · ${course.name}`;
 
@@ -536,10 +536,11 @@ function renderGame() {
     const playerState = getPlayerMatchData(player.id);
     const holeScore = playerState.scores[hole.number] ?? null;
     const shotsOnHole = shotsReceivedForHole(playerState.courseHandicap, hole.strokeIndex);
+    const holeStableford = playerState.holeStableford[hole.number];
 
     const row = document.createElement("div");
     row.className = "score-row";
-    const stablefordClass = getStablefordClass(playerState.stableford);
+    const stablefordClass = getStablefordClass(holeStableford);
     row.innerHTML = `
       <div class="score-card">
         <div class="score-heading">
@@ -551,19 +552,19 @@ function renderGame() {
             <span>HCP+</span>
             <strong>${shotsOnHole}</strong>
           </div>
-          <div class="score-stat score-stat-stableford ${stablefordClass}">
+          <div class="score-stat ${holeStableford === null ? "" : `score-stat-stableford ${stablefordClass}`}">
             <span>Stableford</span>
-            <strong>${playerState.stableford}</strong>
+            <strong>${holeStableford === null ? "-" : holeStableford}</strong>
           </div>
           <div class="score-stat">
             <span>Bruto</span>
             <strong>${playerState.grossTotal}</strong>
           </div>
+          <button class="score-entry" type="button" data-score-player="${player.id}">
+            ${holeScore === null ? "+" : holeScore}
+          </button>
         </div>
       </div>
-      <button class="score-entry" type="button" data-score-player="${player.id}">
-        ${holeScore === null ? "+" : holeScore}
-      </button>
     `;
     scoreboard.appendChild(row);
   });
@@ -621,7 +622,7 @@ function renderSummary(container, activePlayers) {
               <span class="summary-rank">${index + 1}</span>
               <strong>${entry.name}</strong>
               <span>${entry.stableford} ptos</span>
-              <span>${entry.played} jug.</span>
+              <span>${entry.played ? `H${entry.played}` : "-"}</span>
               <span>${entry.gross} golpes</span>
             </div>
           `,
@@ -711,6 +712,16 @@ function getPlayerMatchData(playerId) {
     const net = gross - shotsReceivedForHole(match.courseHandicap, hole.strokeIndex);
     return sum + Math.max(0, 2 + hole.par - net);
   }, 0);
+  const holeStableford = Object.fromEntries(
+    course.holes.map((hole) => {
+      const gross = match.scores[hole.number];
+      if (gross == null) {
+        return [hole.number, null];
+      }
+      const net = gross - shotsReceivedForHole(match.courseHandicap, hole.strokeIndex);
+      return [hole.number, Math.max(0, 2 + hole.par - net)];
+    }),
+  );
 
   return {
     scores: match.scores,
@@ -718,6 +729,7 @@ function getPlayerMatchData(playerId) {
     grossTotal,
     playedHoles,
     stableford,
+    holeStableford,
   };
 }
 
@@ -801,13 +813,16 @@ function getSelectedCourse() {
 }
 
 function getStablefordClass(points) {
-  if (points <= 9) {
+  if (points == null) {
+    return "";
+  }
+  if (points <= 1) {
     return "stableford-low";
   }
-  if (points <= 18) {
+  if (points === 2) {
     return "stableford-mid";
   }
-  if (points <= 27) {
+  if (points === 3) {
     return "stableford-good";
   }
   return "stableford-hot";
@@ -903,11 +918,17 @@ function updateGpsDistance(hole) {
   );
 }
 
-function formatDistance(hole) {
+function formatGpsDistance() {
   if (state.gps.distanceMeters != null) {
     return `${state.gps.distanceMeters}m`;
   }
-  return `${hole.greenCenter}m`;
+  if (state.gps.status === "denied") {
+    return "GPS off";
+  }
+  if (state.gps.status === "unsupported") {
+    return "Sin GPS";
+  }
+  return "--";
 }
 
 function haversineMeters(lat1, lng1, lat2, lng2) {

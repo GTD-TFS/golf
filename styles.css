@@ -296,6 +296,8 @@ select:focus {
   display: grid;
   grid-template-columns: 82px 1fr;
   gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
 }
 
 .top-box {
@@ -305,15 +307,14 @@ select:focus {
   box-shadow: var(--shadow);
 }
 
-.compact-hole-box {
+.hole-inline {
   display: grid;
-  place-items: center;
-  min-height: 76px;
+  justify-items: center;
 }
 
-.compact-hole-box p,
-.gps-box p,
-.mini-meta-box p {
+.hole-inline p,
+.distance-inline p,
+.hole-meta-inline span {
   margin: 0;
   color: var(--muted);
   text-transform: uppercase;
@@ -322,38 +323,35 @@ select:focus {
   letter-spacing: 0.05em;
 }
 
-.compact-hole-box strong {
+.hole-inline strong {
   font-size: 2rem;
   line-height: 0.9;
 }
 
-.gps-box {
+.distance-inline {
   display: grid;
+  gap: 2px;
   align-content: center;
-  padding: 8px 12px;
 }
 
-.gps-box strong {
+.distance-inline strong {
   margin-top: 2px;
   font-size: clamp(2rem, 6vw, 3rem);
   line-height: 0.9;
 }
 
-.mini-meta-box {
-  margin-top: 6px;
-  padding: 7px 9px;
+.hole-meta-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 8px;
+  padding: 0 2px 4px;
 }
 
-.inline-meta-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.inline-meta-grid strong {
-  display: block;
-  margin-top: 2px;
-  font-size: clamp(0.92rem, 2.8vw, 1.16rem);
+.hole-meta-inline strong {
+  margin-left: 4px;
+  color: var(--ink);
+  font-size: 0.9rem;
 }
 
 .scoreboard {
@@ -406,6 +404,7 @@ select:focus {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  align-items: center;
 }
 
 .score-stat {
@@ -458,12 +457,12 @@ select:focus {
 .score-entry {
   display: grid;
   place-items: center;
-  width: clamp(54px, 10vw, 74px);
-  min-height: 58px;
+  width: 54px;
+  min-height: 44px;
   border-radius: 12px;
   border: 1px solid rgba(17, 119, 185, 0.2);
   background: #fff;
-  font-size: 1rem;
+  font-size: 0.9rem;
   font-weight: 800;
   color: var(--sea);
   box-shadow: inset 0 -4px 0 rgba(75, 147, 209, 0.08);
@@ -578,12 +577,13 @@ select:focus {
 }
 
 @media (max-width: 760px) {
-  .gps-strip,
   .score-row,
-  .player-row,
-  .action-strip,
-  .footer-actions {
+  .player-row {
     grid-template-columns: 1fr;
+  }
+
+  .gps-strip {
+    grid-template-columns: 74px 1fr;
   }
 
   .player-actions {
@@ -596,7 +596,7 @@ select:focus {
   }
 
   .score-entry {
-    width: 100%;
+    width: 54px;
   }
 
   .summary-row {

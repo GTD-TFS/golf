@@ -96,30 +96,14 @@
     <template id="game-template">
       <section class="game-screen">
         <div class="sticky-top-wrap">
-          <div class="gps-strip">
-            <div class="top-box compact-hole-box">
+          <div class="top-box gps-strip">
+            <div class="hole-inline">
               <p>Hoyo</p>
               <strong id="current-hole-number"></strong>
             </div>
-            <div class="top-box gps-box">
-              <p>Distancia</p>
+            <div class="distance-inline">
+              <p>Distancia GPS</p>
               <strong id="current-hole-yardage"></strong>
-            </div>
-          </div>
-          <div class="top-box mini-meta-box">
-            <div class="inline-meta-grid">
-                <div>
-                  <p>Par</p>
-                  <strong id="current-hole-par"></strong>
-                </div>
-                <div>
-                  <p>HCP</p>
-                  <strong id="current-hole-hcp"></strong>
-                </div>
-                <div>
-                  <p>Total</p>
-                  <strong id="hole-total-yardage"></strong>
-                </div>
             </div>
           </div>
         </div>
@@ -128,17 +112,22 @@
           <div class="panel-title">
             <span id="match-title"></span>
           </div>
+          <div class="hole-meta-inline">
+            <span>Par <strong id="current-hole-par"></strong></span>
+            <span>HCP <strong id="current-hole-hcp"></strong></span>
+            <span>Total <strong id="hole-total-yardage"></strong></span>
+          </div>
           <div id="scoreboard" class="scoreboard"></div>
-        </div>
-
-        <div class="action-strip">
-          <button id="show-summary" class="secondary-action" type="button">Clasificación</button>
-          <button id="end-match" class="danger-action" type="button">Terminar</button>
         </div>
 
         <div class="footer-actions">
           <button id="prev-hole" class="nav-button" type="button">‹</button>
           <button id="next-hole" class="nav-button" type="button">›</button>
+        </div>
+
+        <div class="action-strip">
+          <button id="show-summary" class="secondary-action" type="button">Clasificación</button>
+          <button id="end-match" class="danger-action" type="button">Terminar</button>
         </div>
       </section>
     </template>
