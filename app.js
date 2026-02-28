@@ -1,5 +1,5 @@
 const STORAGE_KEY = "golf-canarias-state-v2";
-const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v6";
+const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v7";
 const RFEG_HANDICAP_URL = "https://rfeg.es/jugar/handicap";
 const RFEG_API_URL = "https://api.rfeg.es/web/search/handicap";
 const RFEG_PROXY_PAGE_URL = "https://api.allorigins.win/raw?url=https://rfeg.es/jugar/handicap";
@@ -1192,7 +1192,30 @@ function refreshPlayerValidation(player) {
 
 function hasCachedGpsData(courseId) {
   const cached = courseDataCache[courseId];
-  return Boolean(cached && Array.isArray(cached.holes) && cached.holes.length > 0);
+  return Boolean(isUsableGpsData(cached));
+}
+
+function getDistinctGreenCoordinateCount(holes) {
+  if (!Array.isArray(holes)) {
+    return 0;
+  }
+  return new Set(
+    holes
+      .filter((hole) => Number.isFinite(hole?.greenCoordinates?.lat) && Number.isFinite(hole?.greenCoordinates?.lng))
+      .map((hole) => `${hole.greenCoordinates.lat.toFixed(6)},${hole.greenCoordinates.lng.toFixed(6)}`),
+  ).size;
+}
+
+function isUsableGpsData(gpsData, holesCount = null) {
+  if (!gpsData || !Array.isArray(gpsData.holes) || gpsData.holes.length === 0) {
+    return false;
+  }
+  if (holesCount != null && gpsData.holes.length !== holesCount) {
+    return false;
+  }
+  const distinctCoordinates = getDistinctGreenCoordinateCount(gpsData.holes);
+  const requiredDistinct = Math.min(gpsData.holes.length, 3);
+  return distinctCoordinates >= requiredDistinct;
 }
 
 async function ensureCourseGpsData(course) {
@@ -1204,6 +1227,8 @@ async function ensureCourseGpsData(course) {
     applyGpsDataToCourse(course, courseDataCache[course.id]);
     return true;
   }
+  delete courseDataCache[course.id];
+  localStorage.setItem(COURSE_DATA_CACHE_KEY, JSON.stringify(courseDataCache));
 
   if (!COURSE_GPS_API.enabled || !COURSE_GPS_API.baseUrl) {
     return false;
@@ -1369,11 +1394,7 @@ function normalizeCourseGpsPayload(payload, course) {
     })
     .filter(Boolean);
 
-  if (normalizedHoles.length !== course.holesCount) {
-    return null;
-  }
-
-  return { holes: normalizedHoles };
+  return isUsableGpsData({ holes: normalizedHoles }, course.holesCount) ? { holes: normalizedHoles } : null;
 }
 
 function applyGpsDataToCourse(course, gpsData) {
@@ -1426,7 +1447,7 @@ function normalizeGolfCourseApiPayload(payload, course) {
     return null;
   }
 
-  return {
+  const normalized = {
     providerCourseId: match.id ?? null,
     tee,
     holes: tee.holes.map((hole, index) => ({
@@ -1436,6 +1457,7 @@ function normalizeGolfCourseApiPayload(payload, course) {
       meters: Number.isFinite(Number(hole.meters)) ? Number(hole.meters) : yardsToMeters(Number(hole.yardage)),
     })),
   };
+  return isUsableGpsData(normalized, course.holesCount) ? normalized : null;
 }
 
 function buildOverpassCourseQuery(course) {
@@ -1532,35 +1554,38 @@ function normalizeOsmPayload(payload, course) {
 
   const exactMap = buildExactGreenMap(explicitGreens, course.holesCount);
   if (exactMap) {
-    return {
+    const normalized = {
       providerCourseId: `osm:${course.id}`,
       holes: exactMap.map((entry) => ({
         number: entry.number,
         greenCoordinates: entry.greenCoordinates,
       })),
     };
+    return isUsableGpsData(normalized, course.holesCount) ? normalized : null;
   }
 
   const fromHoles = buildMixedGreenMap(holes, explicitGreens, looseGreens, course.holesCount);
   if (fromHoles) {
-    return {
+    const normalized = {
       providerCourseId: `osm:${course.id}`,
       holes: fromHoles.map((entry) => ({
         number: entry.number,
         greenCoordinates: entry.greenCoordinates,
       })),
     };
+    return isUsableGpsData(normalized, course.holesCount) ? normalized : null;
   }
 
   const fromTees = buildMixedGreenMap(tees, explicitGreens, looseGreens, course.holesCount);
   if (fromTees) {
-    return {
+    const normalized = {
       providerCourseId: `osm:${course.id}`,
       holes: fromTees.map((entry) => ({
         number: entry.number,
         greenCoordinates: entry.greenCoordinates,
       })),
     };
+    return isUsableGpsData(normalized, course.holesCount) ? normalized : null;
   }
 
   return null;
