@@ -1,5 +1,5 @@
 const STORAGE_KEY = "golf-canarias-state-v2";
-const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v8";
+const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v9";
 const RFEG_HANDICAP_URL = "https://rfeg.es/jugar/handicap";
 const RFEG_API_URL = "https://api.rfeg.es/web/search/handicap";
 const RFEG_PROXY_PAGE_URL = "https://api.allorigins.win/raw?url=https://rfeg.es/jugar/handicap";
@@ -11,7 +11,7 @@ const PRIVATE_CONFIG = window.GOLF_PRIVATE_CONFIG ?? {};
 const COURSE_GPS_API = {
   provider: "osm",
   enabled: true,
-  baseUrl: "https://overpass-api.de/api/interpreter",
+  baseUrl: "https://overpass.kumi.systems/api/interpreter",
   endpointTemplate: "/courses/{courseId}",
   searchEndpointTemplate: "",
   apiKey: "",
