@@ -433,11 +433,29 @@ button:disabled {
 }
 
 .hole-meta-inline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
   margin-bottom: 8px;
-  padding: 0 2px 4px;
+  padding: 0 0 4px;
+}
+
+.panel-title,
+.hole-meta-inline {
+  width: 100%;
+}
+
+.scoreboard-panel .panel-title span:first-child {
+  display: block;
+  width: 100%;
+  text-align: center;
+}
+
+.hole-meta-inline span {
+  display: block;
+  width: 100%;
+  text-align: center;
 }
 
 .hole-meta-inline strong {
@@ -455,7 +473,7 @@ button:disabled {
   display: block;
   padding: 8px;
   border-radius: 14px;
-  background: #f8fcff;
+  background: linear-gradient(180deg, rgba(114, 195, 82, 0.28), rgba(255, 255, 255, 0.96));
   border: 1px solid var(--line);
 }
 
@@ -593,17 +611,18 @@ button:disabled {
 
 .summary-list {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .summary-row {
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr) auto auto auto;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.84);
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(95, 174, 230, 0.18), rgba(255, 255, 255, 0.95));
+  border: 1px solid rgba(17, 119, 185, 0.14);
 }
 
 .summary-rank {
@@ -618,9 +637,10 @@ button:disabled {
 }
 
 .final-player {
-  padding: 10px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.84);
+  padding: 12px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(114, 195, 82, 0.16), rgba(255, 255, 255, 0.96));
+  border: 1px solid rgba(45, 127, 47, 0.12);
 }
 
 .final-player h3 {
@@ -630,21 +650,23 @@ button:disabled {
 
 .scorecard-grid {
   overflow-x: auto;
+  overflow-y: hidden;
   display: grid;
-  gap: 4px;
+  gap: 8px;
+  padding-bottom: 2px;
 }
 
 .scorecard-row {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(40px, auto);
-  gap: 4px;
+  gap: 6px;
   align-items: center;
 }
 
 .scorecard-label,
 .scorecard-cell {
-  padding: 5px 6px;
+  padding: 6px 8px;
   border-radius: 8px;
   background: #fff;
   border: 1px solid var(--line);
@@ -654,8 +676,9 @@ button:disabled {
 }
 
 .scorecard-label {
-  min-width: 48px;
+  min-width: 52px;
   color: var(--muted);
+  background: #eff7fc;
 }
 
 .modal {
@@ -674,7 +697,10 @@ button:disabled {
 }
 
 .modal-card {
-  width: min(480px, 100%);
+  width: min(980px, 100%);
+  max-width: calc(100vw - 20px);
+  max-height: min(86vh, 760px);
+  overflow: auto;
   padding: 16px;
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.98);
@@ -753,5 +779,16 @@ button:disabled {
 
   .summary-row {
     grid-template-columns: 26px minmax(0, 1fr) auto;
+  }
+}
+
+@media (orientation: landscape) {
+  .modal {
+    padding: 12px;
+  }
+
+  .modal-card {
+    width: min(1100px, calc(100vw - 24px));
+    margin-inline: auto;
   }
 }
