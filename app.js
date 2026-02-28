@@ -19,10 +19,25 @@ const COURSE_GPS_API = {
   ...PRIVATE_CONFIG.courseApi,
 };
 
-const COURSE_OSM_NAMES = {
-  "abama-golf": "Abama Golf",
-  "costa-adeje-los-lagos-9-hoyos": "Campo Los Lagos",
-  "golf-las-americas": "Golf las Américas",
+const COURSE_OSM_CONFIG = {
+  "abama-golf": {
+    name: "Abama Golf",
+  },
+  "amarilla-golf": {
+    name: "Amarilla Golf",
+    relationId: 2586907,
+  },
+  "costa-adeje-los-lagos-9-hoyos": {
+    name: "Campo Los Lagos",
+  },
+  "golf-del-sur": {
+    name: "Golf del Sur",
+    relationId: 13107306,
+  },
+  "golf-las-americas": {
+    name: "Golf las Américas",
+    relationId: 4077462,
+  },
 };
 
 const defaultPlayers = [
@@ -389,7 +404,8 @@ function createCourse(name, island, config) {
     sourceLabel: config.sourceLabel,
     sourceUrl: config.sourceUrl,
     providerCourseId: null,
-    osmQueryName: COURSE_OSM_NAMES[name.toLowerCase().replaceAll(" ", "-")] ?? name,
+    osmQueryName: COURSE_OSM_CONFIG[name.toLowerCase().replaceAll(" ", "-")]?.name ?? name,
+    osmRelationId: COURSE_OSM_CONFIG[name.toLowerCase().replaceAll(" ", "-")]?.relationId ?? null,
     par,
     holes: config.holes.map(([number, parValue, strokeIndex, meters, greenLat, greenLng]) => ({
       number,
@@ -1377,21 +1393,29 @@ function normalizeGolfCourseApiPayload(payload, course) {
 }
 
 function buildOverpassCourseQuery(course) {
+  if (course.osmRelationId) {
+    return `
+[out:json][timeout:25];
+rel(${course.osmRelationId});
+map_to_area;
+(
+  node["golf"~"^(hole|green|pin|tee)$"](area);
+  way["golf"~"^(hole|green|pin|tee)$"](area);
+  relation["golf"~"^(hole|green|pin|tee)$"](area);
+);
+out geom center tags qt;
+    `.trim();
+  }
+
   const escapedName = String(course.osmQueryName || course.name).replaceAll('"', '\\"');
   return `
 [out:json][timeout:25];
-(
-  way["leisure"="golf_course"]["name"="${escapedName}"];
-  relation["leisure"="golf_course"]["name"="${escapedName}"];
-)->.course;
-map_to_area .course->.courseArea;
+nwr["leisure"="golf_course"]["name"="${escapedName}"]->.course;
+.course map_to_area -> .courseArea;
 (
   node["golf"~"^(hole|green|pin|tee)$"](area.courseArea);
   way["golf"~"^(hole|green|pin|tee)$"](area.courseArea);
   relation["golf"~"^(hole|green|pin|tee)$"](area.courseArea);
-)->.holes;
-(
-  .holes;
 );
 out geom center tags qt;
   `.trim();
