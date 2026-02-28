@@ -1535,7 +1535,7 @@ function normalizeOsmPayload(payload, course) {
 
     if (["green", "pin"].includes(golfType)) {
       if (Number.isInteger(numberedRef)) {
-        explicitGreens.push({ number: numberedRef, lat, lng });
+        explicitGreens.push({ number: numberedRef, lat, lng, kind: golfType });
       }
     }
   });
@@ -1762,8 +1762,13 @@ function findOptimalGreenAssignment(referencePoints, candidateGreens, allowedExt
 }
 
 function dedupeNumberedPoints(entries) {
+  const ordered = [...entries].sort((left, right) => {
+    const leftPriority = left.kind === "pin" ? 0 : 1;
+    const rightPriority = right.kind === "pin" ? 0 : 1;
+    return leftPriority - rightPriority;
+  });
   const seen = new Set();
-  return entries.filter((entry) => {
+  return ordered.filter((entry) => {
     if (!Number.isInteger(entry.number) || seen.has(entry.number)) {
       return false;
     }
