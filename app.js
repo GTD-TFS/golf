@@ -59,6 +59,7 @@ const defaultPlayers = [
     handicapIndex: 18.4,
     selected: true,
     validatedAt: "Local",
+    removable: false,
   },
   {
     id: "javier",
@@ -67,6 +68,7 @@ const defaultPlayers = [
     handicapIndex: 28.6,
     selected: true,
     validatedAt: "Local",
+    removable: false,
   },
 ];
 
@@ -395,6 +397,8 @@ const state = {
   scores: loadStoredState().scores ?? {},
   modalPlayerId: null,
   gps: {
+    enabled: false,
+    watchStarted: false,
     userPosition: null,
     distanceMeters: null,
     status: "idle",
@@ -402,7 +406,6 @@ const state = {
 };
 
 registerServiceWorker();
-startGeolocationWatch();
 render();
 
 function createCourse(name, island, config) {
@@ -472,9 +475,12 @@ function renderSetup() {
     row.innerHTML = `
       <input class="player-check" type="checkbox" data-player-id="${player.id}" ${player.selected ? "checked" : ""} />
       <div class="player-block">
-        <div class="player-main">
-          <p class="player-name">${player.name.toUpperCase()}</p>
-          <p class="player-meta">Licencia ${player.license}</p>
+        <div class="player-topline">
+          <div class="player-main">
+            <p class="player-name">${player.name.toUpperCase()}</p>
+            <p class="player-meta">Licencia ${player.license || "Sin licencia"}</p>
+          </div>
+          ${player.removable ? `<button class="player-delete" type="button" data-remove-player="${player.id}" aria-label="Eliminar jugador">×</button>` : ""}
         </div>
         <div class="player-controls">
           <input
@@ -537,6 +543,11 @@ function renderSetup() {
   });
 
   playersList.addEventListener("click", async (event) => {
+    const removeButton = event.target.closest("[data-remove-player]");
+    if (removeButton) {
+      removePlayer(removeButton.dataset.removePlayer);
+      return;
+    }
     const validateButton = event.target.closest("[data-validate-player]");
     if (!validateButton) {
       return;
@@ -558,7 +569,7 @@ function renderSetup() {
 
   startButton.addEventListener("click", async () => {
     startButton.disabled = true;
-    startButton.textContent = "Cargando campo...";
+    startButton.textContent = "Entrando...";
     try {
       await startMatch();
     } finally {
@@ -603,12 +614,14 @@ function renderGame() {
   const activePlayers = getActivePlayers();
   const matchTitle = document.querySelector("#match-title");
   const scoreboard = document.querySelector("#scoreboard");
+  const gpsToggle = document.querySelector("#gps-toggle");
   updateGpsDistance(hole);
 
   document.querySelector("#current-hole-number").textContent = hole.number;
   document.querySelector("#current-hole-par").textContent = hole.par;
   document.querySelector("#current-hole-hcp").textContent = hole.strokeIndex;
   document.querySelector("#current-hole-yardage").textContent = formatGpsDistance(hole);
+  gpsToggle.dataset.enabled = state.gps.enabled ? "true" : "false";
   document.querySelector("#hole-total-yardage").textContent = `${hole.meters}m`;
   matchTitle.textContent = `${activePlayers.map((player) => player.name.split(" ")[0]).join(" vs ")} · ${course.name}`;
 
@@ -633,12 +646,12 @@ function renderGame() {
             <strong>${shotsOnHole}</strong>
           </div>
           <div class="score-stat ${holeStableford === null ? "" : `score-stat-stableford ${stablefordClass}`}">
-            <span>Stableford</span>
+            <span>STB</span>
             <strong>${holeStableford === null ? "-" : holeStableford}</strong>
           </div>
           <div class="score-stat">
             <span>Bruto</span>
-            <strong>${playerState.grossTotal}</strong>
+            <strong>${holeScore === null ? "-" : holeScore}</strong>
           </div>
           <button class="score-entry" type="button" data-score-player="${player.id}">
             ${holeScore === null ? "+" : holeScore}
@@ -661,6 +674,10 @@ function renderGame() {
     openSummaryModal(activePlayers);
   });
 
+  gpsToggle.addEventListener("click", async () => {
+    await toggleGps();
+  });
+
   document.querySelector("#end-match").addEventListener("click", (event) => {
     event.preventDefault();
     endMatch();
@@ -680,6 +697,7 @@ function renderGame() {
 }
 
 function renderSummary(container, activePlayers) {
+  const course = getSelectedCourse();
   const ranking = activePlayers
     .map((player) => {
       const data = getPlayerMatchData(player.id);
@@ -710,6 +728,41 @@ function renderSummary(container, activePlayers) {
             </div>
           `,
         )
+        .join("")}
+    </div>
+    <div class="final-card">
+      ${activePlayers
+        .map((player) => {
+          const data = getPlayerMatchData(player.id);
+          const grossCells = course.holes
+            .map((hole) => `<span class="scorecard-cell">${data.scores[hole.number] ?? "-"}</span>`)
+            .join("");
+          const stbCells = course.holes
+            .map((hole) => {
+              const points = data.holeStableford[hole.number];
+              return `<span class="scorecard-cell">${points == null ? "-" : points}</span>`;
+            })
+            .join("");
+          return `
+            <section class="final-player">
+              <h3>${player.name.toUpperCase()}</h3>
+              <div class="scorecard-grid">
+                <div class="scorecard-row">
+                  <span class="scorecard-label">H</span>
+                  ${course.holes.map((hole) => `<span class="scorecard-cell">H${hole.number}</span>`).join("")}
+                </div>
+                <div class="scorecard-row">
+                  <span class="scorecard-label">BRU</span>
+                  ${grossCells}
+                </div>
+                <div class="scorecard-row">
+                  <span class="scorecard-label">STB</span>
+                  ${stbCells}
+                </div>
+              </div>
+            </section>
+          `;
+        })
         .join("")}
     </div>
   `;
@@ -754,14 +807,10 @@ async function startMatch() {
   );
   state.view = "game";
   state.currentHole = 0;
+  state.gps.enabled = false;
+  state.gps.distanceMeters = null;
   persistState();
   render();
-
-  void requestCurrentPosition().then(() => {
-    if (state.view === "game") {
-      render();
-    }
-  });
 
   void ensureCourseGpsData(course).then((gpsReady) => {
     if (COURSE_GPS_API.enabled && !gpsReady) {
@@ -771,6 +820,20 @@ async function startMatch() {
       render();
     }
   });
+}
+
+async function toggleGps() {
+  state.gps.enabled = !state.gps.enabled;
+  state.gps.distanceMeters = null;
+  if (!state.gps.enabled) {
+    render();
+    return;
+  }
+  startGeolocationWatch();
+  await requestCurrentPosition();
+  if (state.view === "game") {
+    render();
+  }
 }
 
 function endMatch() {
@@ -784,6 +847,8 @@ function endMatch() {
   state.view = "setup";
   state.currentHole = 0;
   state.scores = {};
+  state.gps.enabled = false;
+  state.gps.distanceMeters = null;
   persistState();
   render();
 }
@@ -989,6 +1054,7 @@ function loadPlayers() {
           validationStatus: persisted.validationStatus,
           lastFederationLicense: persisted.lastFederationLicense,
           federationAttemptedAt: persisted.federationAttemptedAt,
+          removable: false,
         }
       : { ...player };
     refreshPlayerValidation(merged);
@@ -1007,6 +1073,7 @@ function loadPlayers() {
       validationStatus: entry.validationStatus,
       lastFederationLicense: entry.lastFederationLicense,
       federationAttemptedAt: entry.federationAttemptedAt,
+      removable: entry.removable ?? true,
     }));
 
   extras.forEach(refreshPlayerValidation);
@@ -1040,11 +1107,15 @@ function registerServiceWorker() {
 }
 
 function startGeolocationWatch() {
+  if (state.gps.watchStarted) {
+    return;
+  }
   if (!("geolocation" in navigator)) {
     state.gps.status = "unsupported";
     return;
   }
 
+  state.gps.watchStarted = true;
   navigator.geolocation.watchPosition(
     (position) => {
       state.gps.userPosition = {
@@ -1071,6 +1142,9 @@ function startGeolocationWatch() {
 }
 
 function requestCurrentPosition() {
+  if (!state.gps.enabled) {
+    return Promise.resolve(null);
+  }
   if (!("geolocation" in navigator)) {
     state.gps.status = "unsupported";
     return Promise.resolve(null);
@@ -1100,7 +1174,7 @@ function requestCurrentPosition() {
 }
 
 function updateGpsDistance(hole) {
-  if (!hole.greenCoordinates || !state.gps.userPosition) {
+  if (!state.gps.enabled || !hole.greenCoordinates || !state.gps.userPosition) {
     state.gps.distanceMeters = null;
     return;
   }
@@ -1111,6 +1185,9 @@ function updateGpsDistance(hole) {
 }
 
 function formatGpsDistance(hole) {
+  if (!state.gps.enabled) {
+    return "OFF";
+  }
   if (state.gps.distanceMeters != null) {
     return `${state.gps.distanceMeters}m`;
   }
@@ -1120,7 +1197,7 @@ function formatGpsDistance(hole) {
   if (state.gps.status === "unsupported") {
     return "Sin GPS";
   }
-  return "--";
+  return hole.greenCoordinates ? "..." : "--";
 }
 
 function haversineMeters(lat1, lng1, lat2, lng2) {
@@ -1148,6 +1225,7 @@ function persistState() {
         validationStatus: player.validationStatus,
         lastFederationLicense: player.lastFederationLicense,
         federationAttemptedAt: player.federationAttemptedAt,
+        removable: player.removable ?? false,
       })),
       selectedCourseId: state.selectedCourseId,
       scores: state.scores,
@@ -1175,7 +1253,19 @@ function addPlayer() {
     validationStatus: "idle",
     lastFederationLicense: "",
     federationAttemptedAt: null,
+    removable: true,
   });
+  persistState();
+  render();
+}
+
+function removePlayer(playerId) {
+  const index = players.findIndex((entry) => entry.id === playerId && entry.removable);
+  if (index === -1) {
+    return;
+  }
+  delete state.scores[playerId];
+  players.splice(index, 1);
   persistState();
   render();
 }

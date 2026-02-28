@@ -19,8 +19,8 @@ body {
   min-height: 100vh;
   font-family: "Barlow", sans-serif;
   background:
-    radial-gradient(circle at top right, rgba(255, 255, 255, 0.7), transparent 30%),
-    linear-gradient(180deg, #8fd2f2 0%, #d7eefb 28%, #f3fbff 100%);
+    linear-gradient(180deg, rgba(225, 244, 255, 0.62), rgba(241, 250, 255, 0.8)),
+    url("./golf-background.svg") center / cover no-repeat fixed;
   color: var(--ink);
 }
 
@@ -33,14 +33,14 @@ select {
 .app-shell {
   width: min(920px, 100%);
   margin: 0 auto;
-  padding: 8px 12px 96px;
+  padding: 8px 12px 140px;
 }
 
 .hero {
   position: sticky;
   top: 0;
   z-index: 20;
-  padding: 10px 14px;
+  padding: 8px 12px;
   border-radius: 0 0 18px 18px;
   background: linear-gradient(135deg, rgba(17, 119, 185, 0.96), rgba(121, 196, 236, 0.96));
   color: #fff;
@@ -93,7 +93,7 @@ body[data-view="game"] .hero {
 
 .eyebrow {
   margin: 0 0 2px;
-  font-size: 0.58rem;
+  font-size: 0.52rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -102,7 +102,7 @@ body[data-view="game"] .hero {
 
 .hero h1 {
   margin: 0;
-  font-size: clamp(1rem, 3vw, 1.35rem);
+  font-size: clamp(0.95rem, 3vw, 1.2rem);
   line-height: 1;
 }
 
@@ -117,9 +117,9 @@ body[data-view="game"] .hero {
 }
 
 .panel {
-  padding: 10px;
+  padding: 8px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.94);
+  background: rgba(255, 255, 255, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.72);
   box-shadow: var(--shadow);
 }
@@ -129,8 +129,8 @@ body[data-view="game"] .hero {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 8px;
-  font-size: 0.95rem;
+  margin-bottom: 6px;
+  font-size: 0.88rem;
   font-weight: 800;
 }
 
@@ -145,7 +145,7 @@ body[data-view="game"] .hero {
 
 .players-list {
   display: grid;
-  gap: 5px;
+  gap: 4px;
 }
 
 .player-row {
@@ -153,7 +153,7 @@ body[data-view="game"] .hero {
   grid-template-columns: 18px 1fr;
   gap: 6px;
   align-items: start;
-  padding: 6px 8px;
+  padding: 5px 7px;
   border-radius: 12px;
   background: linear-gradient(180deg, rgba(223, 241, 255, 0.95), rgba(255, 255, 255, 0.95));
   border: 1px solid var(--line);
@@ -170,18 +170,27 @@ body[data-view="game"] .hero {
 
 .player-block {
   display: grid;
-  gap: 4px;
+  gap: 3px;
+}
+
+.player-topline,
+.player-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .player-main {
-  display: flex;
+  flex: 1;
+  min-width: 0;
   flex-direction: column;
+  align-items: flex-start;
   gap: 1px;
 }
 
 .player-name {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 800;
 }
 
@@ -193,7 +202,7 @@ body[data-view="game"] .hero {
 
 .player-controls {
   display: grid;
-  grid-template-columns: minmax(78px, 92px) 1fr;
+  grid-template-columns: minmax(92px, 108px) 1fr;
   gap: 6px;
   align-items: center;
 }
@@ -205,10 +214,10 @@ body[data-view="game"] .hero {
 }
 
 .player-actions {
-  display: grid;
-  grid-template-columns: auto 1fr;
+  display: flex;
   gap: 6px;
   align-items: center;
+  min-width: 0;
 }
 
 .validation-note {
@@ -219,9 +228,20 @@ body[data-view="game"] .hero {
   font-weight: 700;
 }
 
+.player-delete {
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  border-radius: 999px;
+  background: #fff1ef;
+  color: #ba4331;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
 #add-player {
   margin-top: 6px;
-  min-height: 38px;
+  min-height: 36px;
 }
 
 .field {
@@ -246,13 +266,14 @@ select {
 }
 
 .setup-dock {
-  position: sticky;
+  position: fixed;
+  left: 50%;
   bottom: 0;
+  transform: translateX(-50%);
+  width: min(920px, calc(100vw - 24px));
   z-index: 15;
-  margin-top: 2px;
-  padding-top: 6px;
-  padding-bottom: max(8px, env(safe-area-inset-bottom));
-  background: linear-gradient(180deg, rgba(215, 238, 251, 0), rgba(215, 238, 251, 0.92) 28%, rgba(215, 238, 251, 0.98));
+  padding: 6px 0 max(8px, env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, rgba(215, 238, 251, 0), rgba(215, 238, 251, 0.9) 22%, rgba(215, 238, 251, 0.98));
 }
 
 .setup-dock .primary-action {
@@ -338,8 +359,7 @@ button:disabled {
 }
 
 .gps-strip {
-  display: grid;
-  grid-template-columns: 82px 1fr;
+  display: flex;
   gap: 8px;
   align-items: center;
   padding: 8px 10px;
@@ -355,6 +375,7 @@ button:disabled {
 .hole-inline {
   display: grid;
   justify-items: center;
+  min-width: 82px;
 }
 
 .hole-inline p,
@@ -374,14 +395,37 @@ button:disabled {
 }
 
 .distance-inline {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: right;
+  cursor: pointer;
+}
+
+.distance-copy {
   display: grid;
   gap: 2px;
-  align-content: center;
+  justify-items: end;
+}
+
+.gps-icon {
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.distance-inline[data-enabled="false"] .gps-icon,
+.distance-inline[data-enabled="false"] strong {
+  opacity: 0.72;
 }
 
 .distance-inline strong {
   margin-top: 2px;
-  font-size: clamp(2rem, 6vw, 3rem);
+  font-size: clamp(1.8rem, 5vw, 2.6rem);
   line-height: 0.9;
 }
 
@@ -405,10 +449,7 @@ button:disabled {
 }
 
 .score-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
+  display: block;
   padding: 8px;
   border-radius: 14px;
   background: #f8fcff;
@@ -450,10 +491,13 @@ button:disabled {
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+  width: 100%;
 }
 
 .score-stat {
-  min-width: 68px;
+  display: inline-flex;
+  flex-direction: column;
+  width: fit-content;
   padding: 6px 8px;
   border-radius: 11px;
   background: #fff;
@@ -502,8 +546,9 @@ button:disabled {
 .score-entry {
   display: grid;
   place-items: center;
-  width: 54px;
-  min-height: 44px;
+  width: 42px;
+  min-height: 38px;
+  margin-left: auto;
   border-radius: 12px;
   border: 1px solid rgba(17, 119, 185, 0.2);
   background: #fff;
@@ -518,6 +563,23 @@ button:disabled {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+.game-screen {
+  padding-bottom: 128px;
+}
+
+.game-dock {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: min(920px, calc(100vw - 24px));
+  z-index: 16;
+  display: grid;
+  gap: 8px;
+  padding: 6px 0 max(8px, env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, rgba(215, 238, 251, 0), rgba(215, 238, 251, 0.9) 22%, rgba(215, 238, 251, 0.98));
 }
 
 .nav-button {
@@ -546,6 +608,53 @@ button:disabled {
   font-size: 1rem;
 }
 
+.final-card {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.final-player {
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.final-player h3 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+}
+
+.scorecard-grid {
+  overflow-x: auto;
+  display: grid;
+  gap: 4px;
+}
+
+.scorecard-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(40px, auto);
+  gap: 4px;
+  align-items: center;
+}
+
+.scorecard-label,
+.scorecard-cell {
+  padding: 5px 6px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid var(--line);
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.scorecard-label {
+  min-width: 48px;
+  color: var(--muted);
+}
+
 .modal {
   position: fixed;
   inset: 0;
@@ -554,7 +663,7 @@ button:disabled {
   padding: 20px;
   background: rgba(10, 40, 60, 0.48);
   backdrop-filter: blur(8px);
-  z-index: 200;
+  z-index: 400;
 }
 
 .hidden {
@@ -622,13 +731,8 @@ button:disabled {
 }
 
 @media (max-width: 760px) {
-  .score-row,
   .player-row {
     grid-template-columns: 1fr;
-  }
-
-  .gps-strip {
-    grid-template-columns: 74px 1fr;
   }
 
   .player-actions {
@@ -641,7 +745,7 @@ button:disabled {
   }
 
   .score-entry {
-    width: 54px;
+    width: 42px;
   }
 
   .summary-row {

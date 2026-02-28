@@ -70,19 +70,13 @@
     <template id="setup-template">
       <section class="setup-screen">
         <div class="panel">
-          <div class="panel-title">
-            <span>Jugadores</span>
-            <span class="panel-chip">2 preseleccionados</span>
-          </div>
+          <div class="panel-title"><span>Jugadores</span></div>
           <div id="players-list" class="players-list"></div>
           <button id="add-player" class="secondary-action" type="button">Añadir jugador</button>
         </div>
 
         <div class="panel">
-          <div class="panel-title">
-            <span>Campo</span>
-            <span class="panel-chip">Canarias</span>
-          </div>
+          <div class="panel-title"><span>Campo</span></div>
           <label class="field">
             <span class="field-label">Selecciona campo</span>
             <select id="course-select"></select>
@@ -103,10 +97,13 @@
               <p>Hoyo</p>
               <strong id="current-hole-number"></strong>
             </div>
-            <div class="distance-inline">
-              <p>Distancia GPS</p>
-              <strong id="current-hole-yardage"></strong>
-            </div>
+            <button id="gps-toggle" class="distance-inline" type="button" aria-label="Activar distancia GPS">
+              <span class="gps-icon" aria-hidden="true">🛜</span>
+              <div class="distance-copy">
+                <p>Distancia</p>
+                <strong id="current-hole-yardage"></strong>
+              </div>
+            </button>
           </div>
         </div>
 
@@ -122,14 +119,15 @@
           <div id="scoreboard" class="scoreboard"></div>
         </div>
 
-        <div class="footer-actions">
-          <button id="prev-hole" class="nav-button" type="button">‹</button>
-          <button id="next-hole" class="nav-button" type="button">›</button>
-        </div>
-
-        <div class="action-strip">
-          <button id="show-summary" class="secondary-action" type="button">Clasificación</button>
-          <button id="end-match" class="danger-action" type="button">Terminar</button>
+        <div class="game-dock">
+          <div class="footer-actions">
+            <button id="prev-hole" class="nav-button" type="button">‹</button>
+            <button id="next-hole" class="nav-button" type="button">›</button>
+          </div>
+          <div class="action-strip">
+            <button id="show-summary" class="secondary-action" type="button">Clasificación</button>
+            <button id="end-match" class="danger-action" type="button">Terminar</button>
+          </div>
         </div>
       </section>
     </template>
