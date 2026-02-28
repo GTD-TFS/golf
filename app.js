@@ -1244,8 +1244,22 @@ async function fetchCourseGpsPayload(course) {
 }
 
 async function fetchOsmCourseData(course) {
-  const byAreaPayload = await fetchJsonViaProxy(new URL(`?data=${encodeURIComponent(buildOverpassCourseQuery(course))}`, COURSE_GPS_API.baseUrl).toString());
-  let normalized = normalizeOsmPayload(byAreaPayload, course);
+  let normalized = null;
+
+  if (course.osmElementType && course.osmElementId) {
+    const objectPayload = await fetchJsonViaProxy(
+      new URL(`?data=${encodeURIComponent(buildOverpassObjectQuery(course))}`, COURSE_GPS_API.baseUrl).toString(),
+    );
+    normalized = normalizeOsmPayload(objectPayload, course);
+  }
+
+  if (!normalized) {
+    const byNamePayload = await fetchJsonViaProxy(
+      new URL(`?data=${encodeURIComponent(buildOverpassNamedCourseQuery(course))}`, COURSE_GPS_API.baseUrl).toString(),
+    );
+    normalized = normalizeOsmPayload(byNamePayload, course);
+  }
+
   if (normalized) {
     return normalized;
   }
@@ -1404,6 +1418,10 @@ function normalizeGolfCourseApiPayload(payload, course) {
 }
 
 function buildOverpassCourseQuery(course) {
+  return (course.osmElementType && course.osmElementId ? buildOverpassObjectQuery(course) : buildOverpassNamedCourseQuery(course)).trim();
+}
+
+function buildOverpassObjectQuery(course) {
   if (course.osmElementType && course.osmElementId) {
     const elementKeyword =
       course.osmElementType === "relation" ? "rel" : course.osmElementType === "way" ? "way" : course.osmElementType === "node" ? "node" : null;
@@ -1423,6 +1441,10 @@ out geom center tags qt;
     `.trim();
   }
 
+  return "";
+}
+
+function buildOverpassNamedCourseQuery(course) {
   const escapedName = String(course.osmQueryName || course.name).replaceAll('"', '\\"');
   return `
 [out:json][timeout:25];
