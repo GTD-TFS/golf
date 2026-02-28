@@ -1,5 +1,13 @@
 const STORAGE_KEY = "golf-canarias-state-v2";
+const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v1";
 const RFEG_HANDICAP_URL = "https://rfeg.es/jugar/handicap";
+const COURSE_GPS_API = {
+  enabled: false,
+  baseUrl: "",
+  endpointTemplate: "/courses/{courseId}",
+  apiKey: "",
+  apiKeyHeader: "x-api-key",
+};
 
 const defaultPlayers = [
   {
@@ -297,6 +305,7 @@ const verifiedCourseConfigs = {
 };
 
 const players = loadPlayers();
+const courseDataCache = loadCourseDataCache();
 
 const courses = courseCatalog.map((course) => {
   const id = slugify(course.name);
@@ -389,6 +398,7 @@ function renderSetup() {
   const playersList = document.querySelector("#players-list");
   const courseSelect = document.querySelector("#course-select");
   const courseHint = document.querySelector("#course-hint");
+  const gpsCourseStatus = document.querySelector("#gps-course-status");
   const startButton = document.querySelector("#start-match");
 
   players.forEach((player) => {
@@ -435,6 +445,7 @@ function renderSetup() {
     )
     .join("");
   courseHint.innerHTML = getCourseHint(selectedCourse);
+  gpsCourseStatus.textContent = getGpsCourseStatus(selectedCourse);
 
   playersList.addEventListener("change", (event) => {
     const checkbox = event.target.closest('input[type="checkbox"]');
@@ -485,9 +496,21 @@ function renderSetup() {
     state.selectedCourseId = match?.id ?? courses[0].id;
     persistState();
     courseHint.innerHTML = getCourseHint(getSelectedCourse());
+    gpsCourseStatus.textContent = getGpsCourseStatus(getSelectedCourse());
   });
 
-  startButton.addEventListener("click", startMatch);
+  startButton.addEventListener("click", async () => {
+    startButton.disabled = true;
+    startButton.textContent = "Cargando campo...";
+    try {
+      await startMatch();
+    } finally {
+      if (state.view === "setup") {
+        startButton.disabled = false;
+        startButton.textContent = "Comenzar partido";
+      }
+    }
+  });
 }
 
 function renderGame() {
@@ -644,7 +667,7 @@ function closeSummaryModal() {
   summaryModal.setAttribute("aria-hidden", "true");
 }
 
-function startMatch() {
+async function startMatch() {
   const activePlayers = getActivePlayers();
   if (activePlayers.length === 0) {
     alert("Selecciona al menos un jugador.");
@@ -654,6 +677,12 @@ function startMatch() {
   const course = getSelectedCourse();
   if (!course) {
     alert("Selecciona un campo válido.");
+    return;
+  }
+
+  const gpsReady = await ensureCourseGpsData(course);
+  if (COURSE_GPS_API.enabled && !gpsReady) {
+    alert("No se pudieron cargar los puntos GPS del campo. Revisa la API o vuelve a intentarlo.");
     return;
   }
 
@@ -840,6 +869,19 @@ function getCourseHint(course) {
   return `${course.island} · ${course.holesCount} hoyos · Barras ${course.tee} · Slope ${course.slope} · CR ${formatNumber(course.courseRating)} · ${source}`;
 }
 
+function getGpsCourseStatus(course) {
+  if (!course.playable) {
+    return "GPS del campo no disponible.";
+  }
+  if (hasCachedGpsData(course.id)) {
+    return "GPS del campo en caché local: no hará más peticiones durante la partida.";
+  }
+  if (!COURSE_GPS_API.enabled) {
+    return "API GPS no configurada todavía. Al activarla, se hará una única petición antes de empezar.";
+  }
+  return "API GPS activa: se hará una única petición al iniciar y quedará guardado localmente.";
+}
+
 function loadPlayers() {
   const stored = loadStoredState();
   if (!stored.players) {
@@ -862,6 +904,14 @@ function loadPlayers() {
 function loadStoredState() {
   try {
     return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+function loadCourseDataCache() {
+  try {
+    return JSON.parse(localStorage.getItem(COURSE_DATA_CACHE_KEY) ?? "{}");
   } catch {
     return {};
   }
@@ -956,6 +1006,96 @@ function persistState() {
       scores: state.scores,
     }),
   );
+}
+
+function hasCachedGpsData(courseId) {
+  return Array.isArray(courseDataCache[courseId]?.holes) && courseDataCache[courseId].holes.length > 0;
+}
+
+async function ensureCourseGpsData(course) {
+  if (!course.playable) {
+    return false;
+  }
+
+  if (hasCachedGpsData(course.id)) {
+    applyGpsDataToCourse(course, courseDataCache[course.id]);
+    return true;
+  }
+
+  if (!COURSE_GPS_API.enabled || !COURSE_GPS_API.baseUrl) {
+    return false;
+  }
+
+  const payload = await fetchCourseGpsPayload(course.id);
+  if (!payload) {
+    return false;
+  }
+
+  const normalized = normalizeCourseGpsPayload(payload, course);
+  if (!normalized) {
+    return false;
+  }
+
+  courseDataCache[course.id] = normalized;
+  localStorage.setItem(COURSE_DATA_CACHE_KEY, JSON.stringify(courseDataCache));
+  applyGpsDataToCourse(course, normalized);
+  return true;
+}
+
+async function fetchCourseGpsPayload(courseId) {
+  try {
+    const endpoint = COURSE_GPS_API.endpointTemplate.replace("{courseId}", encodeURIComponent(courseId));
+    const url = new URL(endpoint, COURSE_GPS_API.baseUrl).toString();
+    const headers = {};
+    if (COURSE_GPS_API.apiKey) {
+      headers[COURSE_GPS_API.apiKeyHeader] = COURSE_GPS_API.apiKey;
+    }
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      return null;
+    }
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+function normalizeCourseGpsPayload(payload, course) {
+  const incomingHoles = Array.isArray(payload?.holes) ? payload.holes : Array.isArray(payload) ? payload : null;
+  if (!incomingHoles) {
+    return null;
+  }
+
+  const normalizedHoles = incomingHoles
+    .map((hole) => {
+      const number = Number(hole.number ?? hole.hole ?? hole.id);
+      const green = hole.greenCoordinates ?? hole.green ?? hole.center ?? null;
+      const lat = Number(green?.lat ?? green?.latitude ?? hole.greenLat ?? hole.latitude);
+      const lng = Number(green?.lng ?? green?.lon ?? green?.longitude ?? hole.greenLng ?? hole.longitude);
+      if (!Number.isInteger(number) || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return null;
+      }
+      return {
+        number,
+        greenCoordinates: { lat, lng },
+      };
+    })
+    .filter(Boolean);
+
+  if (normalizedHoles.length !== course.holesCount) {
+    return null;
+  }
+
+  return { holes: normalizedHoles };
+}
+
+function applyGpsDataToCourse(course, gpsData) {
+  course.holes.forEach((hole) => {
+    const match = gpsData.holes.find((entry) => entry.number === hole.number);
+    if (match) {
+      hole.greenCoordinates = match.greenCoordinates;
+    }
+  });
 }
 
 function slugify(value) {
