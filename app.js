@@ -25,18 +25,28 @@ const COURSE_OSM_CONFIG = {
   },
   "amarilla-golf": {
     name: "Amarilla Golf",
-    relationId: 2586907,
+    osmElementType: "relation",
+    osmElementId: 2586907,
   },
   "costa-adeje-los-lagos-9-hoyos": {
     name: "Campo Los Lagos",
+    osmElementType: "way",
+    osmElementId: 28530345,
+  },
+  "golf-costa-adeje": {
+    name: "Golf Costa Adeje",
+    osmElementType: "way",
+    osmElementId: 28530316,
   },
   "golf-del-sur": {
     name: "Golf del Sur",
-    relationId: 13107306,
+    osmElementType: "relation",
+    osmElementId: 13107306,
   },
   "golf-las-americas": {
     name: "Golf las Américas",
-    relationId: 4077462,
+    osmElementType: "relation",
+    osmElementId: 4077462,
   },
 };
 
@@ -405,7 +415,8 @@ function createCourse(name, island, config) {
     sourceUrl: config.sourceUrl,
     providerCourseId: null,
     osmQueryName: COURSE_OSM_CONFIG[name.toLowerCase().replaceAll(" ", "-")]?.name ?? name,
-    osmRelationId: COURSE_OSM_CONFIG[name.toLowerCase().replaceAll(" ", "-")]?.relationId ?? null,
+    osmElementType: COURSE_OSM_CONFIG[name.toLowerCase().replaceAll(" ", "-")]?.osmElementType ?? null,
+    osmElementId: COURSE_OSM_CONFIG[name.toLowerCase().replaceAll(" ", "-")]?.osmElementId ?? null,
     par,
     holes: config.holes.map(([number, parValue, strokeIndex, meters, greenLat, greenLng]) => ({
       number,
@@ -1393,10 +1404,15 @@ function normalizeGolfCourseApiPayload(payload, course) {
 }
 
 function buildOverpassCourseQuery(course) {
-  if (course.osmRelationId) {
+  if (course.osmElementType && course.osmElementId) {
+    const elementKeyword =
+      course.osmElementType === "relation" ? "rel" : course.osmElementType === "way" ? "way" : course.osmElementType === "node" ? "node" : null;
+    if (!elementKeyword) {
+      return "";
+    }
     return `
 [out:json][timeout:25];
-rel(${course.osmRelationId});
+${elementKeyword}(${course.osmElementId});
 map_to_area;
 (
   node["golf"~"^(hole|green|pin|tee)$"](area);
@@ -1887,13 +1903,8 @@ async function getCurrentRfegToken(forceRefresh = false) {
 
   rfegTokenPromise = (async () => {
     try {
-      const response = await fetchWithTimeout(RFEG_PROXY_PAGE_URL);
-      if (!response.ok) {
-        rfegTokenPromise = null;
-        return "";
-      }
-      const html = await response.text();
-      const match = html.match(/App\.page\.init\("jugar",\s*'([^']+)'/);
+      const html = (await fetchPageText(RFEG_PROXY_PAGE_URL)) || (await fetchPageText(RFEG_HANDICAP_URL));
+      const match = html?.match(/App\.page\.init\("jugar",\s*'([^']+)'/);
       if (!match?.[1]) {
         rfegTokenPromise = null;
         return "";
@@ -1910,6 +1921,18 @@ async function getCurrentRfegToken(forceRefresh = false) {
     }
   })();
   return await rfegTokenPromise;
+}
+
+async function fetchPageText(url) {
+  try {
+    const response = await fetchWithTimeout(url);
+    if (!response.ok) {
+      return "";
+    }
+    return await response.text();
+  } catch {
+    return "";
+  }
 }
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = NETWORK_TIMEOUT_MS) {
