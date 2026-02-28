@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Golf Canarias</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="hero">
+        <p class="eyebrow">Tarjeta tipo Golf Directo</p>
+        <h1>Golf Canarias</h1>
+        <p class="subtitle">Partida rápida con hándicap real por hoyo y distancias a green.</p>
+      </header>
+
+      <main id="app"></main>
+    </div>
+
+    <div id="score-modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div>
+            <p class="modal-label">Introducir golpes</p>
+            <h2 id="modal-player-name">Jugador</h2>
+          </div>
+          <button id="close-modal" class="icon-button" type="button" aria-label="Cerrar">
+            ×
+          </button>
+        </div>
+        <div class="pad-grid" id="score-pad"></div>
+      </div>
+    </div>
+
+    <template id="setup-template">
+      <section class="setup-screen">
+        <div class="panel">
+          <div class="panel-title">
+            <span>Jugadores</span>
+            <span class="panel-chip">2 preseleccionados</span>
+          </div>
+          <div id="players-list" class="players-list"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">
+            <span>Campo</span>
+            <span class="panel-chip">Canarias</span>
+          </div>
+          <label class="field">
+            <span class="field-label">Selecciona campo</span>
+            <input id="course-input" list="course-options" autocomplete="off" />
+            <datalist id="course-options"></datalist>
+          </label>
+          <p id="course-hint" class="helper-text"></p>
+        </div>
+
+        <button id="start-match" class="primary-action" type="button">Comenzar partido</button>
+      </section>
+    </template>
+
+    <template id="game-template">
+      <section class="game-screen">
+        <div class="top-strip">
+          <div class="top-box hole-box">
+            <p>Hoyo</p>
+            <strong id="current-hole-number"></strong>
+          </div>
+          <div class="top-box hole-meta">
+            <div class="meta-grid">
+              <div>
+                <p>Par</p>
+                <strong id="current-hole-par"></strong>
+              </div>
+              <div>
+                <p>HCP</p>
+                <strong id="current-hole-hcp"></strong>
+              </div>
+              <div>
+                <p>Green</p>
+                <strong id="current-hole-yardage"></strong>
+              </div>
+            </div>
+            <div class="green-distance">
+              <span>Frente <strong id="green-front"></strong></span>
+              <span>Centro <strong id="green-center"></strong></span>
+              <span>Fondo <strong id="green-back"></strong></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel scoreboard-panel">
+          <div class="panel-title">
+            <span id="match-title"></span>
+            <button id="show-summary" class="secondary-action" type="button">Clasificación</button>
+          </div>
+          <div id="scoreboard" class="scoreboard"></div>
+        </div>
+
+        <div id="summary-panel" class="panel summary-panel hidden"></div>
+
+        <div class="footer-actions">
+          <button id="prev-hole" class="nav-button" type="button">‹</button>
+          <button id="next-hole" class="nav-button" type="button">›</button>
+        </div>
+      </section>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
