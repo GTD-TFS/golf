@@ -427,35 +427,37 @@ function renderSetup() {
 
   const playersList = document.querySelector("#players-list");
   const courseSelect = document.querySelector("#course-select");
-  const courseHint = document.querySelector("#course-hint");
-  const gpsCourseStatus = document.querySelector("#gps-course-status");
   const startButton = document.querySelector("#start-match");
   const addPlayerButton = document.querySelector("#add-player");
 
   players.forEach((player) => {
-    const row = document.createElement("label");
+    const row = document.createElement("div");
     row.className = "player-row";
     const federationUi = getPlayerFederationUi(player);
     row.innerHTML = `
-      <input type="checkbox" data-player-id="${player.id}" ${player.selected ? "checked" : ""} />
-      <div class="player-main">
-        <p class="player-name">${player.name.toUpperCase()}</p>
-        <p class="player-meta">Licencia ${player.license}</p>
-        <input
-          type="number"
-          min="0"
-          max="54"
-          step="0.1"
-          value="${player.handicapIndex}"
-          data-handicap-player="${player.id}"
-          aria-label="Handicap de ${player.name}"
-        />
-      </div>
-      <div class="player-actions">
-        <button class="compact-button" type="button" data-state="${federationUi.state}" data-validate-player="${player.id}">
-          ${federationUi.label}
-        </button>
-        <span class="validation-note">${federationUi.note}</span>
+      <input class="player-check" type="checkbox" data-player-id="${player.id}" ${player.selected ? "checked" : ""} />
+      <div class="player-block">
+        <div class="player-main">
+          <p class="player-name">${player.name.toUpperCase()}</p>
+          <p class="player-meta">Licencia ${player.license}</p>
+        </div>
+        <div class="player-controls">
+          <input
+            type="number"
+            min="0"
+            max="54"
+            step="0.1"
+            value="${player.handicapIndex}"
+            data-handicap-player="${player.id}"
+            aria-label="Handicap de ${player.name}"
+          />
+          <div class="player-actions">
+            <button class="compact-button" type="button" data-state="${federationUi.state}" data-validate-player="${player.id}">
+              ${federationUi.label}
+            </button>
+            <span class="validation-note">${federationUi.note}</span>
+          </div>
+        </div>
       </div>
     `;
     playersList.appendChild(row);
@@ -471,8 +473,6 @@ function renderSetup() {
       `,
     )
     .join("");
-  courseHint.innerHTML = getCourseHint(selectedCourse);
-  gpsCourseStatus.textContent = getGpsCourseStatus(selectedCourse);
   playersList.addEventListener("change", (event) => {
     const checkbox = event.target.closest('input[type="checkbox"]');
 
@@ -517,8 +517,6 @@ function renderSetup() {
     const match = courses.find((course) => course.id === courseSelect.value);
     state.selectedCourseId = match?.id ?? courses[0].id;
     persistState();
-    courseHint.innerHTML = getCourseHint(getSelectedCourse());
-    gpsCourseStatus.textContent = getGpsCourseStatus(getSelectedCourse());
   });
 
   addPlayerButton.addEventListener("click", addPlayer);
@@ -707,13 +705,6 @@ async function startMatch() {
     return;
   }
 
-  await requestCurrentPosition();
-
-  const gpsReady = await ensureCourseGpsData(course);
-  if (COURSE_GPS_API.enabled && !gpsReady) {
-    console.warn(`No se encontraron datos externos para ${course.name}. Se usa la tarjeta local.`);
-  }
-
   state.scores = Object.fromEntries(
     activePlayers.map((player) => {
       const existing = state.scores[player.id]?.scores ?? {};
@@ -730,6 +721,21 @@ async function startMatch() {
   state.currentHole = 0;
   persistState();
   render();
+
+  void requestCurrentPosition().then(() => {
+    if (state.view === "game") {
+      render();
+    }
+  });
+
+  void ensureCourseGpsData(course).then((gpsReady) => {
+    if (COURSE_GPS_API.enabled && !gpsReady) {
+      console.warn(`No se encontraron datos externos para ${course.name}.`);
+    }
+    if (state.view === "game") {
+      render();
+    }
+  });
 }
 
 function endMatch() {

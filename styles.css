@@ -33,7 +33,7 @@ select {
 .app-shell {
   width: min(920px, 100%);
   margin: 0 auto;
-  padding: 8px 12px 24px;
+  padding: 8px 12px 96px;
 }
 
 .hero {
@@ -150,26 +150,33 @@ body[data-view="game"] .hero {
 
 .player-row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 18px 1fr;
   gap: 6px;
-  align-items: center;
-  padding: 6px 7px;
+  align-items: start;
+  padding: 6px 8px;
   border-radius: 12px;
   background: linear-gradient(180deg, rgba(223, 241, 255, 0.95), rgba(255, 255, 255, 0.95));
   border: 1px solid var(--line);
+}
+
+.player-check {
+  width: 14px;
+  height: 14px;
+  min-height: 14px;
+  margin: 2px 0 0;
+  padding: 0;
+  accent-color: var(--sea);
+}
+
+.player-block {
+  display: grid;
+  gap: 4px;
 }
 
 .player-main {
   display: flex;
   flex-direction: column;
   gap: 1px;
-}
-
-.player-main input {
-  margin-top: 3px;
-  max-width: 78px;
-  padding: 4px 6px;
-  border-radius: 10px;
 }
 
 .player-name {
@@ -184,15 +191,29 @@ body[data-view="game"] .hero {
   font-size: 0.66rem;
 }
 
+.player-controls {
+  display: grid;
+  grid-template-columns: minmax(78px, 92px) 1fr;
+  gap: 6px;
+  align-items: center;
+}
+
+.player-controls input {
+  padding: 4px 6px;
+  min-height: 32px;
+  border-radius: 10px;
+}
+
 .player-actions {
   display: grid;
-  gap: 4px;
-  justify-items: end;
+  grid-template-columns: auto 1fr;
+  gap: 6px;
+  align-items: center;
 }
 
 .validation-note {
-  max-width: 120px;
-  text-align: right;
+  min-width: 0;
+  text-align: left;
   color: var(--muted);
   font-size: 0.62rem;
   font-weight: 700;
@@ -222,6 +243,20 @@ select {
   background: #fff;
   color: var(--ink);
   min-height: 42px;
+}
+
+.setup-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 15;
+  margin-top: 2px;
+  padding-top: 6px;
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, rgba(215, 238, 251, 0), rgba(215, 238, 251, 0.92) 28%, rgba(215, 238, 251, 0.98));
+}
+
+.setup-dock .primary-action {
+  width: 100%;
 }
 
 input:focus,
