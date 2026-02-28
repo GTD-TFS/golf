@@ -320,7 +320,6 @@ const verifiedCourseConfigs = {
 
 const players = loadPlayers();
 const courseDataCache = loadCourseDataCache();
-let federationSyncScheduled = false;
 let federationSyncInProgress = false;
 let federationSyncPromise = null;
 let rfegTokenCache = {
@@ -372,7 +371,6 @@ const state = {
 registerServiceWorker();
 startGeolocationWatch();
 render();
-scheduleFederationSync();
 
 function createCourse(name, island, config) {
   const par = config.holes.reduce((sum, hole) => sum + hole[1], 0);
@@ -391,7 +389,6 @@ function createCourse(name, island, config) {
     sourceLabel: config.sourceLabel,
     sourceUrl: config.sourceUrl,
     providerCourseId: null,
-    courseCenterCoordinates: null,
     osmQueryName: COURSE_OSM_NAMES[name.toLowerCase().replaceAll(" ", "-")] ?? name,
     par,
     holes: config.holes.map(([number, parValue, strokeIndex, meters]) => ({
@@ -448,7 +445,9 @@ function renderSetup() {
         />
       </div>
       <div class="player-actions">
-        <span class="compact-button" data-state="${federationUi.state}">${federationUi.label}</span>
+        <button class="compact-button" type="button" data-state="${federationUi.state}" data-validate-player="${player.id}">
+          ${federationUi.label}
+        </button>
         <span class="validation-note">${federationUi.note}</span>
       </div>
     `;
@@ -467,8 +466,6 @@ function renderSetup() {
     .join("");
   courseHint.innerHTML = getCourseHint(selectedCourse);
   gpsCourseStatus.textContent = getGpsCourseStatus(selectedCourse);
-  scheduleFederationSync();
-
   playersList.addEventListener("change", (event) => {
     const checkbox = event.target.closest('input[type="checkbox"]');
 
@@ -493,9 +490,20 @@ function renderSetup() {
         return;
       }
       player.handicapIndex = clamp(numericValue, 0, 54);
-      refreshPlayerValidation(player);
       persistState();
     }
+  });
+
+  playersList.addEventListener("click", async (event) => {
+    const validateButton = event.target.closest("[data-validate-player]");
+    if (!validateButton) {
+      return;
+    }
+    const player = players.find((entry) => entry.id === validateButton.dataset.validatePlayer);
+    if (!player) {
+      return;
+    }
+    await syncFederationHandicaps([player], { force: true });
   });
 
   courseSelect.addEventListener("change", () => {
@@ -613,7 +621,10 @@ function renderGame() {
     openSummaryModal(activePlayers);
   });
 
-  document.querySelector("#end-match").addEventListener("click", endMatch);
+  document.querySelector("#end-match").addEventListener("click", (event) => {
+    event.preventDefault();
+    endMatch();
+  });
 
   document.querySelector("#prev-hole").addEventListener("click", () => {
     state.currentHole = (state.currentHole + course.holes.length - 1) % course.holes.length;
@@ -689,7 +700,6 @@ async function startMatch() {
     return;
   }
 
-  await syncFederationHandicaps(activePlayers, { force: true });
   await requestCurrentPosition();
 
   const gpsReady = await ensureCourseGpsData(course);
@@ -1042,18 +1052,13 @@ function requestCurrentPosition() {
 }
 
 function updateGpsDistance(hole) {
-  const course = getSelectedCourse();
-  const target =
-    hole.greenCoordinates ??
-    hole.targetCoordinates ??
-    course.courseCenterCoordinates;
-  if (!target || !state.gps.userPosition) {
+  if (!hole.greenCoordinates || !state.gps.userPosition) {
     state.gps.distanceMeters = null;
     return;
   }
 
   state.gps.distanceMeters = Math.round(
-    haversineMeters(state.gps.userPosition.lat, state.gps.userPosition.lng, target.lat, target.lng),
+    haversineMeters(state.gps.userPosition.lat, state.gps.userPosition.lng, hole.greenCoordinates.lat, hole.greenCoordinates.lng),
   );
 }
 
@@ -1146,7 +1151,7 @@ function refreshPlayerValidation(player) {
 
 function hasCachedGpsData(courseId) {
   const cached = courseDataCache[courseId];
-  return Boolean(cached && (Array.isArray(cached.holes) || cached.courseCenterCoordinates));
+  return Boolean(cached && Array.isArray(cached.holes) && cached.holes.length > 0);
 }
 
 async function ensureCourseGpsData(course) {
@@ -1212,14 +1217,8 @@ async function fetchOsmCourseData(course) {
   }
 
   if (!normalized) {
-    return {
-      providerCourseId: `osm:${course.id}`,
-      courseCenterCoordinates: geo.center,
-      holes: [],
-    };
+    return null;
   }
-
-  normalized.courseCenterCoordinates = geo.center;
   return normalized;
 }
 
@@ -1309,10 +1308,6 @@ function applyGpsDataToCourse(course, gpsData) {
   if (gpsData.providerCourseId) {
     course.providerCourseId = gpsData.providerCourseId;
   }
-  if (gpsData.courseCenterCoordinates) {
-    course.courseCenterCoordinates = gpsData.courseCenterCoordinates;
-  }
-
   course.holes.forEach((hole, index) => {
     const match = gpsData.holes.find((entry) => entry.number === hole.number) ?? gpsData.holes[index];
     if (!match) {
@@ -1332,9 +1327,6 @@ function applyGpsDataToCourse(course, gpsData) {
     }
     if (match.greenCoordinates) {
       hole.greenCoordinates = match.greenCoordinates;
-    }
-    if (match.targetCoordinates) {
-      hole.targetCoordinates = match.targetCoordinates;
     }
   });
 }
@@ -1377,14 +1369,14 @@ function buildOverpassCourseQuery(course) {
 )->.course;
 map_to_area .course->.courseArea;
 (
-  node["golf"~"^(hole|green|pin)$"](area.courseArea);
-  way["golf"~"^(hole|green|pin)$"](area.courseArea);
-  relation["golf"~"^(hole|green|pin)$"](area.courseArea);
+  node["golf"~"^(hole|green|pin|tee)$"](area.courseArea);
+  way["golf"~"^(hole|green|pin|tee)$"](area.courseArea);
+  relation["golf"~"^(hole|green|pin|tee)$"](area.courseArea);
 )->.holes;
 (
   .holes;
 );
-out center tags qt;
+out geom center tags qt;
   `.trim();
 }
 
@@ -1392,11 +1384,11 @@ function buildOverpassBboxQuery(boundingBox) {
   return `
 [out:json][timeout:25];
 (
-  node["golf"~"^(hole|green|pin)$"](${boundingBox.south},${boundingBox.west},${boundingBox.north},${boundingBox.east});
-  way["golf"~"^(hole|green|pin)$"](${boundingBox.south},${boundingBox.west},${boundingBox.north},${boundingBox.east});
-  relation["golf"~"^(hole|green|pin)$"](${boundingBox.south},${boundingBox.west},${boundingBox.north},${boundingBox.east});
+  node["golf"~"^(hole|green|pin|tee)$"](${boundingBox.south},${boundingBox.west},${boundingBox.north},${boundingBox.east});
+  way["golf"~"^(hole|green|pin|tee)$"](${boundingBox.south},${boundingBox.west},${boundingBox.north},${boundingBox.east});
+  relation["golf"~"^(hole|green|pin|tee)$"](${boundingBox.south},${boundingBox.west},${boundingBox.north},${boundingBox.east});
 );
-out center tags qt;
+out geom center tags qt;
   `.trim();
 }
 
@@ -1428,22 +1420,9 @@ function normalizeOsmPayload(payload, course) {
         holes: assignedGreens.map((entry) => ({
           number: entry.number,
           greenCoordinates: entry.greenCoordinates,
-          targetCoordinates: entry.greenCoordinates,
         })),
       };
     }
-  }
-
-  if (holes.length === course.holesCount) {
-    return {
-      providerCourseId: `osm:${course.id}`,
-      holes: holes
-        .sort((left, right) => left.number - right.number)
-        .map((entry) => ({
-          number: entry.number,
-          targetCoordinates: { lat: entry.lat, lng: entry.lng },
-        })),
-    };
   }
 
   return null;
@@ -1571,17 +1550,6 @@ function formatShortDate(value) {
   }
   const [year, month, day] = value.split("-");
   return `${day}/${month}/${year}`;
-}
-
-function scheduleFederationSync() {
-  if (state.view !== "setup" || federationSyncScheduled || federationSyncInProgress) {
-    return;
-  }
-  federationSyncScheduled = true;
-  window.setTimeout(() => {
-    federationSyncScheduled = false;
-    syncFederationHandicaps().catch(() => {});
-  }, 0);
 }
 
 async function syncFederationHandicaps(targetPlayers = players, options = {}) {
