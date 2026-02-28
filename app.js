@@ -1215,13 +1215,17 @@ async function fetchCourseGpsPayload(course) {
 }
 
 async function fetchOsmCourseData(course) {
+  const byAreaPayload = await fetchJsonViaProxy(new URL(`?data=${encodeURIComponent(buildOverpassCourseQuery(course))}`, COURSE_GPS_API.baseUrl).toString());
+  let normalized = normalizeOsmPayload(byAreaPayload, course);
+  if (normalized) {
+    return normalized;
+  }
+
   const geo = await fetchCourseGeocode(course);
-  if (!geo) {
+  if (!geo?.boundingBox) {
     return null;
   }
 
-  const byAreaPayload = await fetchJsonViaProxy(new URL(`?data=${encodeURIComponent(buildOverpassCourseQuery(course))}`, COURSE_GPS_API.baseUrl).toString());
-  let normalized = normalizeOsmPayload(byAreaPayload, course);
   if (!normalized && geo.boundingBox) {
     const bboxPayload = await fetchJsonViaProxy(new URL(`?data=${encodeURIComponent(buildOverpassBboxQuery(geo.boundingBox))}`, COURSE_GPS_API.baseUrl).toString());
     normalized = normalizeOsmPayload(bboxPayload, course);
