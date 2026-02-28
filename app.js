@@ -1,5 +1,5 @@
 const STORAGE_KEY = "golf-canarias-state-v2";
-const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v5";
+const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v6";
 const RFEG_HANDICAP_URL = "https://rfeg.es/jugar/handicap";
 const RFEG_API_URL = "https://api.rfeg.es/web/search/handicap";
 const RFEG_PROXY_PAGE_URL = "https://api.allorigins.win/raw?url=https://rfeg.es/jugar/handicap";
@@ -153,30 +153,30 @@ const verifiedCourseConfigs = {
     ],
   },
   "golf-costa-adeje": {
-    sourceLabel: "Tarjeta y slope oficiales verificados",
+    sourceLabel: "Tarjeta oficial + greens OSM fijados",
     sourceUrl: "https://www.golfcostaadeje.com/fr/championship-parcour/",
     tee: "59",
     slope: 134,
     courseRating: 71.9,
     holes: [
-      [1, 5, 5, 477],
-      [2, 3, 17, 113],
-      [3, 5, 13, 512],
-      [4, 4, 7, 406],
-      [5, 3, 15, 124],
-      [6, 4, 9, 324],
-      [7, 3, 3, 147],
-      [8, 5, 11, 482],
-      [9, 4, 1, 372],
-      [10, 3, 4, 198],
-      [11, 5, 12, 461],
-      [12, 4, 8, 317],
-      [13, 5, 14, 467],
-      [14, 3, 10, 141],
-      [15, 4, 6, 364],
-      [16, 3, 18, 154],
-      [17, 4, 2, 401],
-      [18, 5, 16, 470],
+      [1, 5, 5, 477, 28.1178248, -16.7505347],
+      [2, 3, 17, 113, 28.1147031, -16.7491981],
+      [3, 5, 13, 512, 28.1150934, -16.7529082],
+      [4, 4, 7, 406, 28.1121632, -16.7557716],
+      [5, 3, 15, 124, 28.1112573, -16.7596827],
+      [6, 4, 9, 324, 28.1109430, -16.7587481],
+      [7, 3, 3, 147, 28.1145403, -16.7480525],
+      [8, 5, 11, 482, 28.1134068, -16.7551673],
+      [9, 4, 1, 372, 28.1099253, -16.7516826],
+      [10, 3, 4, 198, 28.1115229, -16.7509271],
+      [11, 5, 12, 461, 28.1126950, -16.7536085],
+      [12, 4, 8, 317, 28.1131937, -16.7508847],
+      [13, 5, 14, 467, 28.1125926, -16.7495020],
+      [14, 3, 10, 141, 28.1190619, -16.7503999],
+      [15, 4, 6, 364, 28.1188001, -16.7489359],
+      [16, 3, 18, 154, 28.1164143, -16.7474671],
+      [17, 4, 2, 401, 28.1155152, -16.7474618],
+      [18, 5, 16, 470, 28.1184343, -16.7496812],
     ],
   },
   "buenavista-golf": {
@@ -1616,7 +1616,9 @@ function buildMixedGreenMap(referencePoints, explicitGreens, looseGreens, holesC
   );
   const referenceByNumber = new Map(uniqueRefs.map((entry) => [entry.number, entry]));
   const allNumbers = new Set([...exactByNumber.keys(), ...referenceByNumber.keys()]);
-  if (allNumbers.size !== holesCount) {
+  const orderedCourseNumbers = Array.from({ length: holesCount }, (_, index) => index + 1);
+  const missingNumbers = orderedCourseNumbers.filter((number) => !allNumbers.has(number));
+  if (missingNumbers.length > 1) {
     return null;
   }
 
@@ -1642,17 +1644,30 @@ function buildMixedGreenMap(referencePoints, explicitGreens, looseGreens, holesC
     return null;
   }
   if (remainingRefs.length === 0) {
-    return result;
+    if (missingNumbers.length === 0) {
+      return result;
+    }
+    if (looseGreens.length !== 1) {
+      return null;
+    }
+    return [
+      ...result,
+      {
+        number: missingNumbers[0],
+        greenCoordinates: { lat: looseGreens[0].lat, lng: looseGreens[0].lng },
+      },
+    ].sort((left, right) => left.number - right.number);
   }
-  if (looseGreens.length < remainingRefs.length) {
+  const extraLooseGreens = missingNumbers.length;
+  if (looseGreens.length < remainingRefs.length + extraLooseGreens) {
     return null;
   }
 
-  const assigned = assignGreensToHoles(remainingRefs, looseGreens);
-  if (!assigned) {
+  const assignment = findOptimalGreenAssignment(remainingRefs, looseGreens, extraLooseGreens);
+  if (!assignment) {
     return null;
   }
-  const assignedByNumber = new Map(assigned.map((entry) => [entry.number, entry.greenCoordinates]));
+  const assignedByNumber = new Map(assignment.assigned.map((entry) => [entry.number, entry.greenCoordinates]));
   const merged = result.map((entry, index) =>
     entry ??
     (() => {
@@ -1671,7 +1686,90 @@ function buildMixedGreenMap(referencePoints, explicitGreens, looseGreens, holesC
   if (merged.some((entry) => entry === null)) {
     return null;
   }
-  return merged;
+
+  if (missingNumbers.length === 1) {
+    if (assignment.leftoverGreens.length !== 1) {
+      return null;
+    }
+    merged.push({
+      number: missingNumbers[0],
+      greenCoordinates: {
+        lat: assignment.leftoverGreens[0].lat,
+        lng: assignment.leftoverGreens[0].lng,
+      },
+    });
+  }
+
+  return merged.sort((left, right) => left.number - right.number);
+}
+
+function findOptimalGreenAssignment(referencePoints, candidateGreens, allowedExtraGreens = 0) {
+  if (!Array.isArray(referencePoints) || !Array.isArray(candidateGreens) || referencePoints.length === 0) {
+    return null;
+  }
+  if (candidateGreens.length < referencePoints.length || candidateGreens.length > referencePoints.length + allowedExtraGreens) {
+    return null;
+  }
+  if (candidateGreens.length > 20) {
+    return null;
+  }
+
+  const distanceMatrix = referencePoints.map((reference) =>
+    candidateGreens.map((green) => haversineMeters(reference.lat, reference.lng, green.lat, green.lng)),
+  );
+  const memo = new Map();
+
+  function solve(referenceIndex, usedMask) {
+    if (referenceIndex === referencePoints.length) {
+      return { totalDistance: 0, pickedIndices: [] };
+    }
+
+    const key = `${referenceIndex}:${usedMask}`;
+    if (memo.has(key)) {
+      return memo.get(key);
+    }
+
+    let best = null;
+    for (let greenIndex = 0; greenIndex < candidateGreens.length; greenIndex += 1) {
+      if (usedMask & (1 << greenIndex)) {
+        continue;
+      }
+      const remainder = solve(referenceIndex + 1, usedMask | (1 << greenIndex));
+      if (!remainder) {
+        continue;
+      }
+      const totalDistance = distanceMatrix[referenceIndex][greenIndex] + remainder.totalDistance;
+      if (!best || totalDistance < best.totalDistance) {
+        best = {
+          totalDistance,
+          pickedIndices: [greenIndex, ...remainder.pickedIndices],
+        };
+      }
+    }
+
+    memo.set(key, best);
+    return best;
+  }
+
+  const best = solve(0, 0);
+  if (!best || best.pickedIndices.length !== referencePoints.length) {
+    return null;
+  }
+
+  const picked = new Set(best.pickedIndices);
+  return {
+    assigned: referencePoints.map((reference, index) => {
+      const green = candidateGreens[best.pickedIndices[index]];
+      return {
+        number: reference.number,
+        greenCoordinates: {
+          lat: green.lat,
+          lng: green.lng,
+        },
+      };
+    }),
+    leftoverGreens: candidateGreens.filter((_, index) => !picked.has(index)),
+  };
 }
 
 function dedupeNumberedPoints(entries) {
