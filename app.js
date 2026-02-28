@@ -412,6 +412,7 @@ function renderSetup() {
   const courseHint = document.querySelector("#course-hint");
   const gpsCourseStatus = document.querySelector("#gps-course-status");
   const startButton = document.querySelector("#start-match");
+  const addPlayerButton = document.querySelector("#add-player");
 
   players.forEach((player) => {
     const row = document.createElement("label");
@@ -461,7 +462,6 @@ function renderSetup() {
 
   playersList.addEventListener("change", (event) => {
     const checkbox = event.target.closest('input[type="checkbox"]');
-    const handicapInput = event.target.closest("[data-handicap-player]");
 
     if (checkbox) {
       const player = players.find((entry) => entry.id === checkbox.dataset.playerId);
@@ -470,7 +470,10 @@ function renderSetup() {
         persistState();
       }
     }
+  });
 
+  playersList.addEventListener("input", (event) => {
+    const handicapInput = event.target.closest("[data-handicap-player]");
     if (handicapInput) {
       const player = players.find((entry) => entry.id === handicapInput.dataset.handicapPlayer);
       if (!player) {
@@ -510,6 +513,8 @@ function renderSetup() {
     courseHint.innerHTML = getCourseHint(getSelectedCourse());
     gpsCourseStatus.textContent = getGpsCourseStatus(getSelectedCourse());
   });
+
+  addPlayerButton.addEventListener("click", addPlayer);
 
   startButton.addEventListener("click", async () => {
     startButton.disabled = true;
@@ -742,11 +747,14 @@ function getPlayerMatchData(playerId) {
     scores: {},
     courseHandicap: calculateCourseHandicap(player.handicapIndex, course),
   };
-  const grossTotal = Object.values(match.scores).reduce((sum, value) => sum + value, 0);
+  const grossTotal = Object.values(match.scores).reduce((sum, value) => (typeof value === "number" ? sum + value : sum), 0);
   const playedHoles = Object.keys(match.scores).length;
   const stableford = course.holes.reduce((sum, hole) => {
     const gross = match.scores[hole.number];
     if (gross == null) {
+      return sum;
+    }
+    if (gross === "-") {
       return sum;
     }
     const net = gross - shotsReceivedForHole(match.courseHandicap, hole.strokeIndex);
@@ -757,6 +765,9 @@ function getPlayerMatchData(playerId) {
       const gross = match.scores[hole.number];
       if (gross == null) {
         return [hole.number, null];
+      }
+      if (gross === "-") {
+        return [hole.number, 0];
       }
       const net = gross - shotsReceivedForHole(match.courseHandicap, hole.strokeIndex);
       return [hole.number, Math.max(0, 2 + hole.par - net)];
@@ -819,9 +830,18 @@ scorePad.addEventListener("click", (event) => {
   if (value === "Borrar") {
     delete match.scores[holeNumber];
   } else if (value === "-") {
-    match.scores[holeNumber] = 0;
+    match.scores[holeNumber] = "-";
   } else if (value === "10+") {
-    match.scores[holeNumber] = 10;
+    const customValue = window.prompt("Introduce los golpes (10 o más):", "10");
+    if (customValue == null) {
+      return;
+    }
+    const numericValue = Number(customValue);
+    if (!Number.isFinite(numericValue) || numericValue < 10) {
+      alert("Introduce un número válido de 10 o más.");
+      return;
+    }
+    match.scores[holeNumber] = Math.floor(numericValue);
   } else {
     match.scores[holeNumber] = Number(value);
   }
@@ -905,7 +925,7 @@ function loadPlayers() {
     return defaultPlayers.map((player) => ({ ...player }));
   }
 
-  return defaultPlayers.map((player) => {
+  const mergedDefaults = defaultPlayers.map((player) => {
     const persisted = stored.players.find((entry) => entry.id === player.id);
     return persisted
       ? {
@@ -916,6 +936,19 @@ function loadPlayers() {
         }
       : { ...player };
   });
+
+  const extras = stored.players
+    .filter((entry) => !defaultPlayers.some((player) => player.id === entry.id))
+    .map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      license: entry.license ?? "",
+      handicapIndex: entry.handicapIndex ?? 0,
+      selected: entry.selected ?? true,
+      validatedAt: entry.validatedAt ?? null,
+    }));
+
+  return [...mergedDefaults, ...extras];
 }
 
 function loadStoredState() {
@@ -960,8 +993,8 @@ function startGeolocationWatch() {
         render();
       }
     },
-    () => {
-      state.gps.status = "denied";
+    (error) => {
+      state.gps.status = error.code === 1 ? "denied" : "searching";
       if (state.view === "game") {
         render();
       }
@@ -1015,6 +1048,8 @@ function persistState() {
     JSON.stringify({
       players: players.map((player) => ({
         id: player.id,
+        name: player.name,
+        license: player.license,
         selected: player.selected,
         handicapIndex: player.handicapIndex,
         validatedAt: player.validatedAt,
@@ -1023,6 +1058,28 @@ function persistState() {
       scores: state.scores,
     }),
   );
+}
+
+function addPlayer() {
+  const name = window.prompt("Nombre del jugador:");
+  if (!name) {
+    return;
+  }
+  const license = window.prompt("Licencia (opcional):", "") ?? "";
+  const handicapText = window.prompt("Handicap inicial:", "0");
+  const handicapIndex = clamp(Number(handicapText), 0, 54);
+  const id = slugify(`${name}-${Date.now()}`);
+
+  players.push({
+    id,
+    name,
+    license,
+    handicapIndex: Number.isFinite(handicapIndex) ? handicapIndex : 0,
+    selected: true,
+    validatedAt: null,
+  });
+  persistState();
+  render();
 }
 
 function hasCachedGpsData(courseId) {
