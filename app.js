@@ -320,8 +320,6 @@ const verifiedCourseConfigs = {
 
 const players = loadPlayers();
 const courseDataCache = loadCourseDataCache();
-let federationSyncInProgress = false;
-let federationSyncPromise = null;
 let rfegTokenCache = {
   value: PRIVATE_CONFIG.rfegToken ?? "",
   fetchedAt: PRIVATE_CONFIG.rfegToken ? Date.now() : 0,
@@ -1577,54 +1575,44 @@ async function syncFederationHandicaps(targetPlayers = players, options = {}) {
   if (candidates.length === 0) {
     return;
   }
-  if (federationSyncInProgress) {
-    await federationSyncPromise;
-    return;
+  const pendingPlayers = candidates.filter((player) => player.validationStatus !== "loading");
+  pendingPlayers.forEach((player) => {
+    player.validationStatus = "loading";
+  });
+
+  if (pendingPlayers.length > 0 && state.view === "setup") {
+    render();
   }
-  federationSyncInProgress = true;
-  federationSyncPromise = (async () => {
-    const pendingPlayers = candidates.filter((player) => player.validationStatus !== "loading");
-    pendingPlayers.forEach((player) => {
-      player.validationStatus = "loading";
-    });
 
-    if (pendingPlayers.length > 0 && state.view === "setup") {
-      render();
-    }
-
-    await Promise.all(
-      candidates.map(async (player) => {
-        try {
-          const result = await fetchFederationHandicap(player.license);
-          if (!result) {
-            player.validationStatus = "failed";
-            player.lastFederationLicense = player.license;
-            player.federationAttemptedAt = Date.now();
-            persistState();
-            return;
-          }
-          player.handicapIndex = result.handicapIndex;
-          player.validatedAt = result.updatedAt;
-          player.validationStatus = "federation";
-          player.lastFederationLicense = player.license;
-          player.federationAttemptedAt = Date.now();
-          persistState();
-        } catch {
+  await Promise.all(
+    candidates.map(async (player) => {
+      try {
+        const result = await fetchFederationHandicap(player.license);
+        if (!result) {
           player.validationStatus = "failed";
           player.lastFederationLicense = player.license;
           player.federationAttemptedAt = Date.now();
           persistState();
+          return;
         }
-      }),
-    );
-    federationSyncInProgress = false;
-    federationSyncPromise = null;
+        player.handicapIndex = result.handicapIndex;
+        player.validatedAt = result.updatedAt;
+        player.validationStatus = "federation";
+        player.lastFederationLicense = player.license;
+        player.federationAttemptedAt = Date.now();
+        persistState();
+      } catch {
+        player.validationStatus = "failed";
+        player.lastFederationLicense = player.license;
+        player.federationAttemptedAt = Date.now();
+        persistState();
+      }
+    }),
+  );
 
-    if (state.view === "setup") {
-      render();
-    }
-  })();
-  await federationSyncPromise;
+  if (state.view === "setup") {
+    render();
+  }
 }
 
 async function fetchFederationHandicap(query) {
@@ -1653,7 +1641,7 @@ async function fetchFederationHandicap(query) {
     return null;
   }
   const payload = await response.json();
-  const hit = payload?.data?.hits?.[0]?.document;
+  const hit = pickFederationDocument(payload?.data?.hits, query);
   const handicapIndex = Number(hit?.handicap);
   if (!Number.isFinite(handicapIndex)) {
     return null;
@@ -1662,6 +1650,55 @@ async function fetchFederationHandicap(query) {
     handicapIndex: clamp(handicapIndex, 0, 54),
     updatedAt: hit?.date_hdc_updated_at ?? "",
   };
+}
+
+function pickFederationDocument(hits, query) {
+  const documents = Array.isArray(hits) ? hits.map((entry) => entry?.document).filter(Boolean) : [];
+  if (documents.length === 0) {
+    return null;
+  }
+
+  const normalizedQuery = normalizeFederationValue(query);
+  const exactMatches = documents.filter((document) => federationDocumentMatches(document, normalizedQuery));
+  if (exactMatches.length > 0) {
+    return exactMatches[0];
+  }
+
+  return documents.length === 1 ? documents[0] : null;
+}
+
+function federationDocumentMatches(document, normalizedQuery) {
+  if (!normalizedQuery) {
+    return false;
+  }
+
+  return collectFederationStrings(document).some((value) => normalizeFederationValue(value) === normalizedQuery);
+}
+
+function collectFederationStrings(value, seen = new Set()) {
+  if (value == null) {
+    return [];
+  }
+  if (typeof value === "string" || typeof value === "number") {
+    return [String(value)];
+  }
+  if (typeof value !== "object") {
+    return [];
+  }
+  if (seen.has(value)) {
+    return [];
+  }
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => collectFederationStrings(entry, seen));
+  }
+  return Object.values(value).flatMap((entry) => collectFederationStrings(entry, seen));
+}
+
+function normalizeFederationValue(value) {
+  return String(value ?? "")
+    .toUpperCase()
+    .replaceAll(/[^A-Z0-9]+/g, "");
 }
 
 async function getCurrentRfegToken(forceRefresh = false) {
