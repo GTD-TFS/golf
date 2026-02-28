@@ -331,8 +331,15 @@ const state = {
   currentHole: 0,
   scores: loadStoredState().scores ?? {},
   modalPlayerId: null,
+  gps: {
+    userPosition: null,
+    distanceMeters: null,
+    status: "idle",
+  },
 };
 
+registerServiceWorker();
+startGeolocationWatch();
 render();
 
 function createCourse(name, island, config) {
@@ -365,6 +372,7 @@ function createCourse(name, island, config) {
 }
 
 function render() {
+  document.body.dataset.view = state.view;
   app.innerHTML = "";
   if (state.view === "setup") {
     renderSetup();
@@ -515,45 +523,41 @@ function renderGame() {
   const activePlayers = getActivePlayers();
   const matchTitle = document.querySelector("#match-title");
   const scoreboard = document.querySelector("#scoreboard");
+  updateGpsDistance(hole);
+
   document.querySelector("#current-hole-number").textContent = hole.number;
   document.querySelector("#current-hole-par").textContent = hole.par;
   document.querySelector("#current-hole-hcp").textContent = hole.strokeIndex;
-  document.querySelector("#current-hole-yardage").textContent = `${hole.greenCenter}m`;
-  document.querySelector("#green-front").textContent = `${hole.greenFront}m`;
-  document.querySelector("#green-center").textContent = `${hole.greenCenter}m`;
-  document.querySelector("#green-back").textContent = `${hole.greenBack}m`;
+  document.querySelector("#current-hole-yardage").textContent = formatDistance(hole);
+  document.querySelector("#hole-total-yardage").textContent = `${hole.meters}m`;
   matchTitle.textContent = `${activePlayers.map((player) => player.name.split(" ")[0]).join(" vs ")} · ${course.name}`;
 
   activePlayers.forEach((player) => {
     const playerState = getPlayerMatchData(player.id);
     const holeScore = playerState.scores[hole.number] ?? null;
-    const shotsOnHole = shotsReceivedForHole(playerState.playingHandicap, hole.strokeIndex);
+    const shotsOnHole = shotsReceivedForHole(playerState.courseHandicap, hole.strokeIndex);
 
     const row = document.createElement("div");
     row.className = "score-row";
+    const stablefordClass = getStablefordClass(playerState.stableford);
     row.innerHTML = `
       <div class="score-card">
         <div class="score-heading">
           <h3>${player.name.toUpperCase()}</h3>
           <span class="pill pill-blue">HI ${formatNumber(player.handicapIndex)}</span>
-          <span class="pill pill-green">Juega ${playerState.playingHandicap}</span>
         </div>
         <div class="score-stats">
           <div class="score-stat">
-            <span>Golpes aquí</span>
+            <span>HCP+</span>
             <strong>${shotsOnHole}</strong>
           </div>
-          <div class="score-stat">
+          <div class="score-stat score-stat-stableford ${stablefordClass}">
             <span>Stableford</span>
             <strong>${playerState.stableford}</strong>
           </div>
           <div class="score-stat">
             <span>Bruto</span>
             <strong>${playerState.grossTotal}</strong>
-          </div>
-          <div class="score-stat">
-            <span>Hoyos jug.</span>
-            <strong>${playerState.playedHoles}</strong>
           </div>
         </div>
       </div>
@@ -711,7 +715,6 @@ function getPlayerMatchData(playerId) {
   return {
     scores: match.scores,
     courseHandicap: match.courseHandicap,
-    playingHandicap: match.courseHandicap,
     grossTotal,
     playedHoles,
     stableford,
@@ -797,6 +800,19 @@ function getSelectedCourse() {
   return courses.find((course) => course.id === state.selectedCourseId) ?? courses[0];
 }
 
+function getStablefordClass(points) {
+  if (points <= 9) {
+    return "stableford-low";
+  }
+  if (points <= 18) {
+    return "stableford-mid";
+  }
+  if (points <= 27) {
+    return "stableford-good";
+  }
+  return "stableford-hot";
+}
+
 function getCourseHint(course) {
   if (!course.playable) {
     return `${course.island} · ${course.sourceLabel}`;
@@ -834,6 +850,75 @@ function loadStoredState() {
   } catch {
     return {};
   }
+}
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) {
+    return;
+  }
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  });
+}
+
+function startGeolocationWatch() {
+  if (!("geolocation" in navigator)) {
+    state.gps.status = "unsupported";
+    return;
+  }
+
+  navigator.geolocation.watchPosition(
+    (position) => {
+      state.gps.userPosition = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+      };
+      state.gps.status = "ready";
+      if (state.view === "game") {
+        render();
+      }
+    },
+    () => {
+      state.gps.status = "denied";
+      if (state.view === "game") {
+        render();
+      }
+    },
+    {
+      enableHighAccuracy: true,
+      maximumAge: 3000,
+      timeout: 10000,
+    },
+  );
+}
+
+function updateGpsDistance(hole) {
+  if (!hole.greenCoordinates || !state.gps.userPosition) {
+    state.gps.distanceMeters = null;
+    return;
+  }
+
+  state.gps.distanceMeters = Math.round(
+    haversineMeters(state.gps.userPosition.lat, state.gps.userPosition.lng, hole.greenCoordinates.lat, hole.greenCoordinates.lng),
+  );
+}
+
+function formatDistance(hole) {
+  if (state.gps.distanceMeters != null) {
+    return `${state.gps.distanceMeters}m`;
+  }
+  return `${hole.greenCenter}m`;
+}
+
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  const toRad = (value) => (value * Math.PI) / 180;
+  const earthRadius = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * earthRadius * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function persistState() {

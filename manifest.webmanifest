@@ -1,0 +1,16 @@
+{
+  "name": "Golf Canarias",
+  "short_name": "Golf",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#d7eefb",
+  "theme_color": "#1177b9",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Golf Canarias</title>
+    <meta name="theme-color" content="#1177b9" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Golf" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -15,9 +22,16 @@
   <body>
     <div class="app-shell">
       <header class="hero">
-        <p class="eyebrow">Tarjeta tipo Golf Directo</p>
-        <h1>Golf Canarias</h1>
-        <p class="subtitle">Partida rápida con hándicap real por hoyo y distancias a green.</p>
+        <div class="hero-brand">
+          <div class="brand-mark" aria-hidden="true">
+            <span class="brand-green"></span>
+            <span class="brand-flag"></span>
+          </div>
+          <div>
+            <p class="eyebrow">Tarjeta tipo Golf Directo</p>
+            <h1>Golf Canarias</h1>
+          </div>
+        </div>
       </header>
 
       <main id="app"></main>
@@ -82,13 +96,18 @@
     <template id="game-template">
       <section class="game-screen">
         <div class="sticky-top-wrap">
-          <div class="top-strip compact-top-strip">
+          <div class="gps-strip">
             <div class="top-box compact-hole-box">
               <p>Hoyo</p>
               <strong id="current-hole-number"></strong>
             </div>
-            <div class="top-box compact-hole-meta">
-              <div class="inline-meta-grid">
+            <div class="top-box gps-box">
+              <p>Distancia</p>
+              <strong id="current-hole-yardage"></strong>
+            </div>
+          </div>
+          <div class="top-box mini-meta-box">
+            <div class="inline-meta-grid">
                 <div>
                   <p>Par</p>
                   <strong id="current-hole-par"></strong>
@@ -98,15 +117,9 @@
                   <strong id="current-hole-hcp"></strong>
                 </div>
                 <div>
-                  <p>A green</p>
-                  <strong id="current-hole-yardage"></strong>
+                  <p>Total</p>
+                  <strong id="hole-total-yardage"></strong>
                 </div>
-              </div>
-              <div class="green-distance compact-green-distance">
-                <span>Frente <strong id="green-front"></strong></span>
-                <span>Centro <strong id="green-center"></strong></span>
-                <span>Fondo <strong id="green-back"></strong></span>
-              </div>
             </div>
           </div>
         </div>
@@ -114,12 +127,13 @@
         <div class="panel scoreboard-panel">
           <div class="panel-title">
             <span id="match-title"></span>
-            <div class="header-actions">
-              <button id="show-summary" class="secondary-action" type="button">Clasificación</button>
-              <button id="end-match" class="danger-action" type="button">Terminar</button>
-            </div>
           </div>
           <div id="scoreboard" class="scoreboard"></div>
+        </div>
+
+        <div class="action-strip">
+          <button id="show-summary" class="secondary-action" type="button">Clasificación</button>
+          <button id="end-match" class="danger-action" type="button">Terminar</button>
         </div>
 
         <div class="footer-actions">
