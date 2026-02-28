@@ -5,6 +5,7 @@ const RFEG_API_URL = "https://api.rfeg.es/web/search/handicap";
 const RFEG_PROXY_PAGE_URL = "https://api.allorigins.win/raw?url=https://rfeg.es/jugar/handicap";
 const OPEN_PROXY_BASE_URL = "https://api.allorigins.win/raw?url=";
 const NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search";
+const NETWORK_TIMEOUT_MS = 12000;
 const PRIVATE_CONFIG = window.GOLF_PRIVATE_CONFIG ?? {};
 const COURSE_GPS_API = {
   provider: "osm",
@@ -20,6 +21,7 @@ const COURSE_GPS_API = {
 
 const COURSE_OSM_NAMES = {
   "abama-golf": "Abama Golf",
+  "costa-adeje-los-lagos-9-hoyos": "Campo Los Lagos",
   "golf-las-americas": "Golf las Américas",
 };
 
@@ -1204,7 +1206,7 @@ async function fetchCourseGpsPayload(course) {
     if (COURSE_GPS_API.apiKey) {
       headers[COURSE_GPS_API.apiKeyHeader] = `${COURSE_GPS_API.apiKeyPrefix ?? ""}${COURSE_GPS_API.apiKey}`;
     }
-    const response = await fetch(url, { headers });
+    const response = await fetchWithTimeout(url, { headers });
     if (!response.ok) {
       return null;
     }
@@ -1266,7 +1268,7 @@ async function fetchCourseGeocode(course) {
 async function fetchJsonViaProxy(url) {
   try {
     const proxiedUrl = `${OPEN_PROXY_BASE_URL}${encodeURIComponent(url)}`;
-    const response = await fetch(proxiedUrl);
+    const response = await fetchWithTimeout(proxiedUrl);
     if (!response.ok) {
       return null;
     }
@@ -1770,7 +1772,7 @@ async function fetchFederationHandicap(query) {
     return null;
   }
   const url = `${RFEG_API_URL}?q=${encodeURIComponent(query)}`;
-  let response = await fetch(url, {
+  let response = await fetchWithTimeout(url, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -1780,7 +1782,7 @@ async function fetchFederationHandicap(query) {
     if (!token) {
       return null;
     }
-    response = await fetch(url, {
+    response = await fetchWithTimeout(url, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
@@ -1861,7 +1863,7 @@ async function getCurrentRfegToken(forceRefresh = false) {
 
   rfegTokenPromise = (async () => {
     try {
-      const response = await fetch(RFEG_PROXY_PAGE_URL);
+      const response = await fetchWithTimeout(RFEG_PROXY_PAGE_URL);
       if (!response.ok) {
         rfegTokenPromise = null;
         return "";
@@ -1884,4 +1886,18 @@ async function getCurrentRfegToken(forceRefresh = false) {
     }
   })();
   return await rfegTokenPromise;
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = NETWORK_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...options,
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
