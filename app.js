@@ -321,6 +321,9 @@ const modal = document.querySelector("#score-modal");
 const modalPlayerName = document.querySelector("#modal-player-name");
 const closeModalButton = document.querySelector("#close-modal");
 const scorePad = document.querySelector("#score-pad");
+const summaryModal = document.querySelector("#summary-modal");
+const summaryModalContent = document.querySelector("#summary-modal-content");
+const closeSummaryModalButton = document.querySelector("#close-summary-modal");
 
 const state = {
   view: "setup",
@@ -328,7 +331,6 @@ const state = {
   currentHole: 0,
   scores: loadStoredState().scores ?? {},
   modalPlayerId: null,
-  summaryOpen: loadStoredState().summaryOpen ?? false,
 };
 
 render();
@@ -377,8 +379,7 @@ function renderSetup() {
   app.appendChild(fragment);
 
   const playersList = document.querySelector("#players-list");
-  const courseInput = document.querySelector("#course-input");
-  const dataList = document.querySelector("#course-options");
+  const courseSelect = document.querySelector("#course-select");
   const courseHint = document.querySelector("#course-hint");
   const startButton = document.querySelector("#start-match");
 
@@ -417,13 +418,13 @@ function renderSetup() {
 
   courses.forEach((course) => {
     const option = document.createElement("option");
-    option.value = `${course.name} (${course.island})`;
-    option.dataset.courseId = course.id;
-    dataList.appendChild(option);
+    option.value = course.id;
+    option.textContent = `${course.name} (${course.island})`;
+    courseSelect.appendChild(option);
   });
 
   const selectedCourse = getSelectedCourse();
-  courseInput.value = `${selectedCourse.name} (${selectedCourse.island})`;
+  courseSelect.value = selectedCourse.id;
   courseHint.innerHTML = getCourseHint(selectedCourse);
 
   playersList.addEventListener("change", (event) => {
@@ -470,15 +471,11 @@ function renderSetup() {
     render();
   });
 
-  courseInput.addEventListener("input", () => {
-    const match = courses.find((course) => `${course.name} (${course.island})` === courseInput.value);
-    if (!match) {
-      courseHint.textContent = "Campo no reconocido. Selecciona uno de la lista.";
-      return;
-    }
-    state.selectedCourseId = match.id;
+  courseSelect.addEventListener("change", () => {
+    const match = courses.find((course) => course.id === courseSelect.value);
+    state.selectedCourseId = match?.id ?? courses[0].id;
     persistState();
-    courseHint.innerHTML = getCourseHint(match);
+    courseHint.innerHTML = getCourseHint(getSelectedCourse());
   });
 
   startButton.addEventListener("click", startMatch);
@@ -517,12 +514,10 @@ function renderGame() {
   const activePlayers = getActivePlayers();
   const matchTitle = document.querySelector("#match-title");
   const scoreboard = document.querySelector("#scoreboard");
-  const summaryPanel = document.querySelector("#summary-panel");
-
   document.querySelector("#current-hole-number").textContent = hole.number;
   document.querySelector("#current-hole-par").textContent = hole.par;
   document.querySelector("#current-hole-hcp").textContent = hole.strokeIndex;
-  document.querySelector("#current-hole-yardage").textContent = `${hole.meters}m`;
+  document.querySelector("#current-hole-yardage").textContent = `${hole.greenCenter}m`;
   document.querySelector("#green-front").textContent = `${hole.greenFront}m`;
   document.querySelector("#green-center").textContent = `${hole.greenCenter}m`;
   document.querySelector("#green-back").textContent = `${hole.greenBack}m`;
@@ -568,11 +563,6 @@ function renderGame() {
     scoreboard.appendChild(row);
   });
 
-  summaryPanel.classList.toggle("hidden", !state.summaryOpen);
-  if (state.summaryOpen) {
-    renderSummary(summaryPanel, activePlayers);
-  }
-
   scoreboard.addEventListener("click", (event) => {
     const trigger = event.target.closest("[data-score-player]");
     if (!trigger) {
@@ -582,10 +572,10 @@ function renderGame() {
   });
 
   document.querySelector("#show-summary").addEventListener("click", () => {
-    state.summaryOpen = !state.summaryOpen;
-    persistState();
-    render();
+    openSummaryModal(activePlayers);
   });
+
+  document.querySelector("#end-match").addEventListener("click", endMatch);
 
   document.querySelector("#prev-hole").addEventListener("click", () => {
     state.currentHole = (state.currentHole + course.holes.length - 1) % course.holes.length;
@@ -636,6 +626,18 @@ function renderSummary(container, activePlayers) {
   `;
 }
 
+function openSummaryModal(activePlayers) {
+  summaryModalContent.innerHTML = "";
+  renderSummary(summaryModalContent, activePlayers);
+  summaryModal.classList.remove("hidden");
+  summaryModal.setAttribute("aria-hidden", "false");
+}
+
+function closeSummaryModal() {
+  summaryModal.classList.add("hidden");
+  summaryModal.setAttribute("aria-hidden", "true");
+}
+
 function startMatch() {
   const activePlayers = getActivePlayers();
   if (activePlayers.length === 0) {
@@ -663,7 +665,21 @@ function startMatch() {
   );
   state.view = "game";
   state.currentHole = 0;
-  state.summaryOpen = false;
+  persistState();
+  render();
+}
+
+function endMatch() {
+  const confirmed = window.confirm("¿Terminar partido y volver al inicio? Se conservarán los últimos valores guardados.");
+  if (!confirmed) {
+    return;
+  }
+
+  closeScoreModal();
+  closeSummaryModal();
+  state.view = "setup";
+  state.currentHole = 0;
+  state.scores = {};
   persistState();
   render();
 }
@@ -760,9 +776,15 @@ scorePad.addEventListener("click", (event) => {
 });
 
 closeModalButton.addEventListener("click", closeScoreModal);
+closeSummaryModalButton.addEventListener("click", closeSummaryModal);
 modal.addEventListener("click", (event) => {
   if (event.target === modal) {
     closeScoreModal();
+  }
+});
+summaryModal.addEventListener("click", (event) => {
+  if (event.target === summaryModal) {
+    closeSummaryModal();
   }
 });
 
@@ -825,7 +847,6 @@ function persistState() {
       })),
       selectedCourseId: state.selectedCourseId,
       scores: state.scores,
-      summaryOpen: state.summaryOpen,
     }),
   );
 }

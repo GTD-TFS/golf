@@ -38,6 +38,21 @@
       </div>
     </div>
 
+    <div id="summary-modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div>
+            <p class="modal-label">Clasificación</p>
+            <h2>General</h2>
+          </div>
+          <button id="close-summary-modal" class="icon-button" type="button" aria-label="Cerrar">
+            ×
+          </button>
+        </div>
+        <div id="summary-modal-content"></div>
+      </div>
+    </div>
+
     <template id="setup-template">
       <section class="setup-screen">
         <div class="panel">
@@ -55,8 +70,7 @@
           </div>
           <label class="field">
             <span class="field-label">Selecciona campo</span>
-            <input id="course-input" list="course-options" autocomplete="off" />
-            <datalist id="course-options"></datalist>
+            <select id="course-select"></select>
           </label>
           <p id="course-hint" class="helper-text"></p>
         </div>
@@ -67,30 +81,32 @@
 
     <template id="game-template">
       <section class="game-screen">
-        <div class="top-strip">
-          <div class="top-box hole-box">
-            <p>Hoyo</p>
-            <strong id="current-hole-number"></strong>
-          </div>
-          <div class="top-box hole-meta">
-            <div class="meta-grid">
-              <div>
-                <p>Par</p>
-                <strong id="current-hole-par"></strong>
-              </div>
-              <div>
-                <p>HCP</p>
-                <strong id="current-hole-hcp"></strong>
-              </div>
-              <div>
-                <p>Green</p>
-                <strong id="current-hole-yardage"></strong>
-              </div>
+        <div class="sticky-top-wrap">
+          <div class="top-strip compact-top-strip">
+            <div class="top-box compact-hole-box">
+              <p>Hoyo</p>
+              <strong id="current-hole-number"></strong>
             </div>
-            <div class="green-distance">
-              <span>Frente <strong id="green-front"></strong></span>
-              <span>Centro <strong id="green-center"></strong></span>
-              <span>Fondo <strong id="green-back"></strong></span>
+            <div class="top-box compact-hole-meta">
+              <div class="inline-meta-grid">
+                <div>
+                  <p>Par</p>
+                  <strong id="current-hole-par"></strong>
+                </div>
+                <div>
+                  <p>HCP</p>
+                  <strong id="current-hole-hcp"></strong>
+                </div>
+                <div>
+                  <p>A green</p>
+                  <strong id="current-hole-yardage"></strong>
+                </div>
+              </div>
+              <div class="green-distance compact-green-distance">
+                <span>Frente <strong id="green-front"></strong></span>
+                <span>Centro <strong id="green-center"></strong></span>
+                <span>Fondo <strong id="green-back"></strong></span>
+              </div>
             </div>
           </div>
         </div>
@@ -98,12 +114,13 @@
         <div class="panel scoreboard-panel">
           <div class="panel-title">
             <span id="match-title"></span>
-            <button id="show-summary" class="secondary-action" type="button">Clasificación</button>
+            <div class="header-actions">
+              <button id="show-summary" class="secondary-action" type="button">Clasificación</button>
+              <button id="end-match" class="danger-action" type="button">Terminar</button>
+            </div>
           </div>
           <div id="scoreboard" class="scoreboard"></div>
         </div>
-
-        <div id="summary-panel" class="panel summary-panel hidden"></div>
 
         <div class="footer-actions">
           <button id="prev-hole" class="nav-button" type="button">‹</button>
