@@ -1,5 +1,5 @@
 const STORAGE_KEY = "golf-canarias-state-v2";
-const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v4";
+const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v5";
 const RFEG_HANDICAP_URL = "https://rfeg.es/jugar/handicap";
 const RFEG_API_URL = "https://api.rfeg.es/web/search/handicap";
 const RFEG_PROXY_PAGE_URL = "https://api.allorigins.win/raw?url=https://rfeg.es/jugar/handicap";
@@ -1245,20 +1245,20 @@ async function fetchCourseGpsPayload(course) {
 
 async function fetchOsmCourseData(course) {
   let normalized = null;
+  let mergedPayload = null;
 
   if (course.osmElementType && course.osmElementId) {
     const objectPayload = await fetchJsonViaProxy(
       new URL(`?data=${encodeURIComponent(buildOverpassObjectQuery(course))}`, COURSE_GPS_API.baseUrl).toString(),
     );
-    normalized = normalizeOsmPayload(objectPayload, course);
+    mergedPayload = mergeOsmPayloads(mergedPayload, objectPayload);
   }
 
-  if (!normalized) {
-    const byNamePayload = await fetchJsonViaProxy(
-      new URL(`?data=${encodeURIComponent(buildOverpassNamedCourseQuery(course))}`, COURSE_GPS_API.baseUrl).toString(),
-    );
-    normalized = normalizeOsmPayload(byNamePayload, course);
-  }
+  const byNamePayload = await fetchJsonViaProxy(
+    new URL(`?data=${encodeURIComponent(buildOverpassNamedCourseQuery(course))}`, COURSE_GPS_API.baseUrl).toString(),
+  );
+  mergedPayload = mergeOsmPayloads(mergedPayload, byNamePayload);
+  normalized = normalizeOsmPayload(mergedPayload, course);
 
   if (normalized) {
     return normalized;
@@ -1278,6 +1278,26 @@ async function fetchOsmCourseData(course) {
     return null;
   }
   return normalized;
+}
+
+function mergeOsmPayloads(left, right) {
+  const leftElements = Array.isArray(left?.elements) ? left.elements : [];
+  const rightElements = Array.isArray(right?.elements) ? right.elements : [];
+  if (leftElements.length === 0 && rightElements.length === 0) {
+    return null;
+  }
+
+  const seen = new Set();
+  const elements = [...leftElements, ...rightElements].filter((entry) => {
+    const key = `${entry.type}:${entry.id}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+
+  return { elements };
 }
 
 async function fetchCourseGeocode(course) {
