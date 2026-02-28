@@ -2,10 +2,8 @@ const STORAGE_KEY = "golf-canarias-state-v2";
 const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v2";
 const RFEG_HANDICAP_URL = "https://rfeg.es/jugar/handicap";
 const RFEG_API_URL = "https://api.rfeg.es/web/search/handicap";
+const RFEG_PROXY_PAGE_URL = "https://api.allorigins.win/raw?url=https://rfeg.es/jugar/handicap";
 const PRIVATE_CONFIG = window.GOLF_PRIVATE_CONFIG ?? {};
-const RFEG_API_TOKEN =
-  PRIVATE_CONFIG.rfegToken ??
-  "coded_a74007e96390ad4907fefb4348062282cb20e8692778c75c3ffa36d5bcc9d5df243508f488a1a8965ce9b7a59cf683ab5841e7c7c1310f2f3e399ebb7b443f0b545e2dd2d9";
 const COURSE_GPS_API = {
   provider: "osm",
   enabled: true,
@@ -323,6 +321,10 @@ const courseDataCache = loadCourseDataCache();
 let federationSyncScheduled = false;
 let federationSyncInProgress = false;
 let federationSyncPromise = null;
+let rfegTokenCache = {
+  value: PRIVATE_CONFIG.rfegToken ?? "",
+  fetchedAt: PRIVATE_CONFIG.rfegToken ? Date.now() : 0,
+};
 
 const courses = courseCatalog.map((course) => {
   const id = slugify(course.name);
@@ -1050,17 +1052,13 @@ function formatGpsDistance(hole) {
   if (state.gps.distanceMeters != null) {
     return `${state.gps.distanceMeters}m`;
   }
-  const fallbackMeters = Math.round(Number(hole?.greenCenter ?? hole?.meters ?? 0));
-  if (fallbackMeters > 0) {
-    return `${fallbackMeters}m`;
-  }
   if (state.gps.status === "denied") {
     return "GPS off";
   }
   if (state.gps.status === "unsupported") {
     return "Sin GPS";
   }
-  return "Sin green";
+  return "--";
 }
 
 function haversineMeters(lat1, lng1, lat2, lng2) {
@@ -1496,7 +1494,7 @@ async function syncFederationHandicaps(targetPlayers = players, options = {}) {
         player.lastFederationLicense !== player.license ||
         (!player.federationAttemptedAt && player.validationStatus !== "federation")),
   );
-  if (candidates.length === 0 || !RFEG_API_TOKEN) {
+  if (candidates.length === 0) {
     return;
   }
   if (federationSyncInProgress) {
@@ -1550,10 +1548,14 @@ async function syncFederationHandicaps(targetPlayers = players, options = {}) {
 }
 
 async function fetchFederationHandicap(query) {
+  const token = await getCurrentRfegToken();
+  if (!token) {
+    return null;
+  }
   const url = `${RFEG_API_URL}?q=${encodeURIComponent(query)}`;
   const response = await fetch(url, {
     headers: {
-      Authorization: `Bearer ${RFEG_API_TOKEN}`,
+      Authorization: `Bearer ${token}`,
     },
   });
   if (!response.ok) {
@@ -1569,4 +1571,26 @@ async function fetchFederationHandicap(query) {
     handicapIndex: clamp(handicapIndex, 0, 54),
     updatedAt: hit?.date_hdc_updated_at ?? "",
   };
+}
+
+async function getCurrentRfegToken() {
+  const now = Date.now();
+  if (rfegTokenCache.value && now - rfegTokenCache.fetchedAt < 5 * 60 * 1000) {
+    return rfegTokenCache.value;
+  }
+
+  const response = await fetch(RFEG_PROXY_PAGE_URL);
+  if (!response.ok) {
+    return "";
+  }
+  const html = await response.text();
+  const match = html.match(/App\.page\.init\("jugar",\s*'([^']+)'/);
+  if (!match?.[1]) {
+    return "";
+  }
+  rfegTokenCache = {
+    value: match[1],
+    fetchedAt: now,
+  };
+  return rfegTokenCache.value;
 }
