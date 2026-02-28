@@ -554,7 +554,7 @@ function renderGame() {
   document.querySelector("#current-hole-number").textContent = hole.number;
   document.querySelector("#current-hole-par").textContent = hole.par;
   document.querySelector("#current-hole-hcp").textContent = hole.strokeIndex;
-  document.querySelector("#current-hole-yardage").textContent = formatGpsDistance();
+  document.querySelector("#current-hole-yardage").textContent = formatGpsDistance(hole);
   document.querySelector("#hole-total-yardage").textContent = `${hole.meters}m`;
   matchTitle.textContent = `${activePlayers.map((player) => player.name.split(" ")[0]).join(" vs ")} · ${course.name}`;
 
@@ -922,6 +922,9 @@ function loadPlayers() {
           selected: persisted.selected,
           handicapIndex: persisted.handicapIndex,
           validatedAt: persisted.validatedAt,
+          validationStatus: persisted.validationStatus,
+          lastFederationLicense: persisted.lastFederationLicense,
+          federationAttemptedAt: persisted.federationAttemptedAt,
         }
       : { ...player };
     refreshPlayerValidation(merged);
@@ -936,7 +939,10 @@ function loadPlayers() {
       license: entry.license ?? "",
       handicapIndex: entry.handicapIndex ?? 0,
       selected: entry.selected ?? true,
-      validatedAt: entry.validatedAt ?? "Local",
+      validatedAt: entry.validatedAt ?? "",
+      validationStatus: entry.validationStatus,
+      lastFederationLicense: entry.lastFederationLicense,
+      federationAttemptedAt: entry.federationAttemptedAt,
     }));
 
   extras.forEach(refreshPlayerValidation);
@@ -1040,9 +1046,13 @@ function updateGpsDistance(hole) {
   );
 }
 
-function formatGpsDistance() {
+function formatGpsDistance(hole) {
   if (state.gps.distanceMeters != null) {
     return `${state.gps.distanceMeters}m`;
+  }
+  const fallbackMeters = Math.round(Number(hole?.greenCenter ?? hole?.meters ?? 0));
+  if (fallbackMeters > 0) {
+    return `${fallbackMeters}m`;
   }
   if (state.gps.status === "denied") {
     return "GPS off";
@@ -1075,6 +1085,9 @@ function persistState() {
         selected: player.selected,
         handicapIndex: player.handicapIndex,
         validatedAt: player.validatedAt,
+        validationStatus: player.validationStatus,
+        lastFederationLicense: player.lastFederationLicense,
+        federationAttemptedAt: player.federationAttemptedAt,
       })),
       selectedCourseId: state.selectedCourseId,
       scores: state.scores,
@@ -1099,6 +1112,9 @@ function addPlayer() {
     handicapIndex: Number.isFinite(handicapIndex) ? handicapIndex : 0,
     selected: true,
     validatedAt: "",
+    validationStatus: "idle",
+    lastFederationLicense: "",
+    federationAttemptedAt: null,
   });
   persistState();
   render();
@@ -1108,7 +1124,17 @@ function refreshPlayerValidation(player) {
   if (!player) {
     return;
   }
-  player.validationStatus = player.validationStatus ?? (player.validatedAt && /^\d{4}-\d{2}-\d{2}$/.test(player.validatedAt) ? "federation" : "idle");
+  if (!player.license) {
+    player.validationStatus = "idle";
+    return;
+  }
+  player.validationStatus =
+    player.validationStatus ??
+    (player.validatedAt && /^\d{4}-\d{2}-\d{2}$/.test(player.validatedAt)
+      ? "federation"
+      : player.federationAttemptedAt
+      ? "failed"
+      : "idle");
 }
 
 function hasCachedGpsData(courseId) {
@@ -1427,6 +1453,14 @@ function getPlayerFederationUi(player) {
     };
   }
 
+  if (player.validationStatus === "failed") {
+    return {
+      state: "idle",
+      label: "Federación",
+      note: "Guardado",
+    };
+  }
+
   return {
     state: "idle",
     label: "Federación",
@@ -1456,7 +1490,11 @@ function scheduleFederationSync() {
 async function syncFederationHandicaps(targetPlayers = players, options = {}) {
   const force = Boolean(options.force);
   const candidates = targetPlayers.filter(
-    (player) => player.license && (force || player.validationStatus !== "federation" || player.lastFederationLicense !== player.license),
+    (player) =>
+      player.license &&
+      (force ||
+        player.lastFederationLicense !== player.license ||
+        (!player.federationAttemptedAt && player.validationStatus !== "federation")),
   );
   if (candidates.length === 0 || !RFEG_API_TOKEN) {
     return;
@@ -1481,16 +1519,23 @@ async function syncFederationHandicaps(targetPlayers = players, options = {}) {
         try {
           const result = await fetchFederationHandicap(player.license);
           if (!result) {
-            player.validationStatus = "idle";
+            player.validationStatus = "failed";
+            player.lastFederationLicense = player.license;
+            player.federationAttemptedAt = Date.now();
+            persistState();
             return;
           }
           player.handicapIndex = result.handicapIndex;
           player.validatedAt = result.updatedAt;
           player.validationStatus = "federation";
           player.lastFederationLicense = player.license;
+          player.federationAttemptedAt = Date.now();
           persistState();
         } catch {
-          player.validationStatus = "idle";
+          player.validationStatus = "failed";
+          player.lastFederationLicense = player.license;
+          player.federationAttemptedAt = Date.now();
+          persistState();
         }
       }),
     );
