@@ -26,7 +26,7 @@ const defaultPlayers = [
     license: "CP41742315",
     handicapIndex: 18.4,
     selected: true,
-    validatedAt: null,
+    validatedAt: "Auto",
   },
   {
     id: "javier",
@@ -34,7 +34,7 @@ const defaultPlayers = [
     license: "CM00472449",
     handicapIndex: 28.6,
     selected: true,
-    validatedAt: null,
+    validatedAt: "Auto",
   },
 ];
 
@@ -433,15 +433,8 @@ function renderSetup() {
         />
       </div>
       <div class="player-actions">
-        <button
-          class="compact-button"
-          type="button"
-          data-validate-player="${player.id}"
-          data-state="${player.validatedAt ? "done" : "idle"}"
-        >
-          ${player.validatedAt ? "Validado" : "Validar HCP"}
-        </button>
-        <span class="validation-note">${player.validatedAt ? `Manual · ${player.validatedAt}` : "RFEG + ajuste manual"}</span>
+        <span class="compact-button" data-state="done">HCP Auto</span>
+        <span class="validation-note">Persistente local</span>
       </div>
     `;
     playersList.appendChild(row);
@@ -484,26 +477,9 @@ function renderSetup() {
         return;
       }
       player.handicapIndex = clamp(numericValue, 0, 54);
+      refreshPlayerValidation(player);
       persistState();
     }
-  });
-
-  playersList.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-validate-player]");
-    if (!button) {
-      return;
-    }
-    const player = players.find((entry) => entry.id === button.dataset.validatePlayer);
-    if (!player) {
-      return;
-    }
-    window.open(RFEG_HANDICAP_URL, "_blank", "noopener,noreferrer");
-    player.validatedAt = new Intl.DateTimeFormat("es-ES", {
-      dateStyle: "short",
-      timeStyle: "short",
-    }).format(new Date());
-    persistState();
-    render();
   });
 
   courseSelect.addEventListener("change", () => {
@@ -696,6 +672,8 @@ async function startMatch() {
     alert("Selecciona un campo válido.");
     return;
   }
+
+  await requestCurrentPosition();
 
   const gpsReady = await ensureCourseGpsData(course);
   if (COURSE_GPS_API.enabled && !gpsReady) {
@@ -927,7 +905,7 @@ function loadPlayers() {
 
   const mergedDefaults = defaultPlayers.map((player) => {
     const persisted = stored.players.find((entry) => entry.id === player.id);
-    return persisted
+    const merged = persisted
       ? {
           ...player,
           selected: persisted.selected,
@@ -935,6 +913,8 @@ function loadPlayers() {
           validatedAt: persisted.validatedAt,
         }
       : { ...player };
+    refreshPlayerValidation(merged);
+    return merged;
   });
 
   const extras = stored.players
@@ -945,8 +925,10 @@ function loadPlayers() {
       license: entry.license ?? "",
       handicapIndex: entry.handicapIndex ?? 0,
       selected: entry.selected ?? true,
-      validatedAt: entry.validatedAt ?? null,
+      validatedAt: entry.validatedAt ?? "Auto",
     }));
+
+  extras.forEach(refreshPlayerValidation);
 
   return [...mergedDefaults, ...extras];
 }
@@ -1005,6 +987,35 @@ function startGeolocationWatch() {
       timeout: 10000,
     },
   );
+}
+
+function requestCurrentPosition() {
+  if (!("geolocation" in navigator)) {
+    state.gps.status = "unsupported";
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        state.gps.userPosition = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+        state.gps.status = "ready";
+        resolve(position);
+      },
+      (error) => {
+        state.gps.status = error.code === 1 ? "denied" : "searching";
+        resolve(null);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 10000,
+      },
+    );
+  });
 }
 
 function updateGpsDistance(hole) {
@@ -1076,10 +1087,17 @@ function addPlayer() {
     license,
     handicapIndex: Number.isFinite(handicapIndex) ? handicapIndex : 0,
     selected: true,
-    validatedAt: null,
+    validatedAt: "Auto",
   });
   persistState();
   render();
+}
+
+function refreshPlayerValidation(player) {
+  if (!player) {
+    return;
+  }
+  player.validatedAt = "Auto";
 }
 
 function hasCachedGpsData(courseId) {
