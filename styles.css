@@ -40,11 +40,16 @@ select {
   position: sticky;
   top: 0;
   z-index: 20;
-  padding: 8px 12px;
+  min-height: 112px;
+  padding: 10px 12px 12px;
   border-radius: 0 0 18px 18px;
-  background: linear-gradient(135deg, rgba(17, 119, 185, 0.96), rgba(121, 196, 236, 0.96));
+  background:
+    linear-gradient(180deg, rgba(13, 77, 118, 0.18), rgba(13, 77, 118, 0.34)),
+    url("./header-green-banner.svg") center center / cover no-repeat;
   color: #fff;
   box-shadow: var(--shadow);
+  display: flex;
+  align-items: flex-end;
 }
 
 body[data-view="game"] .hero {
@@ -55,6 +60,12 @@ body[data-view="game"] .hero {
   display: flex;
   align-items: center;
   gap: 12px;
+  position: relative;
+  z-index: 1;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: rgba(15, 76, 116, 0.34);
+  backdrop-filter: blur(3px);
 }
 
 .brand-mark {
@@ -367,9 +378,12 @@ button:disabled {
 
 .top-box {
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.96);
+  background:
+    linear-gradient(180deg, rgba(13, 77, 118, 0.08), rgba(13, 77, 118, 0.26)),
+    url("./header-green-banner.svg") center center / cover no-repeat;
   border: 1px solid rgba(255, 255, 255, 0.76);
   box-shadow: var(--shadow);
+  min-height: 88px;
 }
 
 .hole-inline {
@@ -382,7 +396,7 @@ button:disabled {
 .distance-inline p,
 .hole-meta-inline span {
   margin: 0;
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.92);
   text-transform: uppercase;
   font-size: 0.6rem;
   font-weight: 700;
@@ -392,6 +406,8 @@ button:disabled {
 .hole-inline strong {
   font-size: 2rem;
   line-height: 0.9;
+  color: #fff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
 }
 
 .distance-inline {
@@ -430,6 +446,8 @@ button:disabled {
   margin-top: 2px;
   font-size: clamp(1.8rem, 5vw, 2.6rem);
   line-height: 0.9;
+  color: #fff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
 }
 
 .hole-meta-inline {
