@@ -863,7 +863,7 @@ async function startMatch() {
         {
           scores: existing,
           courseHandicap: course.playable ? calculateCourseHandicap(player.handicapIndex, course) : 0,
-          playingHandicap: course.playable ? calculatePlayingHandicap(calculateCourseHandicap(player.handicapIndex, course)) : 0,
+          playingHandicap: course.playable ? calculatePlayingHandicap(player.handicapIndex, course) : 0,
         },
       ];
     }),
@@ -916,13 +916,17 @@ function endMatch() {
   render();
 }
 
-function calculateCourseHandicap(handicapIndex, course) {
-  const fullRoundValue = handicapIndex * (course.slope / 113) + (course.courseRating - course.ratingPar);
-  return Math.max(0, Math.round(fullRoundValue * course.handicapFactor));
+function calculateRawCourseHandicap(handicapIndex, course) {
+  const rawValue = (handicapIndex * (course.slope / 113) + (course.courseRating - course.ratingPar)) * course.handicapFactor;
+  return Math.max(0, rawValue);
 }
 
-function calculatePlayingHandicap(courseHandicap) {
-  return Math.max(0, Math.round(courseHandicap * 0.95));
+function calculateCourseHandicap(handicapIndex, course) {
+  return Math.round(calculateRawCourseHandicap(handicapIndex, course));
+}
+
+function calculatePlayingHandicap(handicapIndex, course) {
+  return Math.round(calculateRawCourseHandicap(handicapIndex, course) * 0.95);
 }
 
 function getPlayerMatchData(playerId) {
@@ -932,10 +936,9 @@ function getPlayerMatchData(playerId) {
   const match = state.scores[playerId] ?? {
     scores: {},
     courseHandicap: fallbackCourseHandicap,
-    playingHandicap: calculatePlayingHandicap(fallbackCourseHandicap),
+    playingHandicap: calculatePlayingHandicap(player.handicapIndex, course),
   };
-  const playingHandicap =
-    typeof match.playingHandicap === "number" ? match.playingHandicap : calculatePlayingHandicap(match.courseHandicap);
+  const playingHandicap = typeof match.playingHandicap === "number" ? match.playingHandicap : calculatePlayingHandicap(player.handicapIndex, course);
   const grossTotal = Object.values(match.scores).reduce((sum, value) => (typeof value === "number" ? sum + value : sum), 0);
   const playedHoles = Object.keys(match.scores).length;
   const stableford = course.holes.reduce((sum, hole) => {
