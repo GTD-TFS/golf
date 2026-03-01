@@ -734,6 +734,12 @@ function renderSummary(container, activePlayers) {
       ${activePlayers
         .map((player) => {
           const data = getPlayerMatchData(player.id);
+          const starCells = course.holes
+            .map((hole) => {
+              const stars = "*".repeat(strokeMarksForHole(data.courseHandicap, hole.strokeIndex));
+              return `<span class="scorecard-cell">${stars || "-"}</span>`;
+            })
+            .join("");
           const grossCells = course.holes
             .map((hole) => `<span class="scorecard-cell">${data.scores[hole.number] ?? "-"}</span>`)
             .join("");
@@ -762,6 +768,10 @@ function renderSummary(container, activePlayers) {
                 <div class="scorecard-row">
                   <span class="scorecard-label">HCP</span>
                   ${hcpCells}
+                </div>
+                <div class="scorecard-row">
+                  <span class="scorecard-label">*</span>
+                  ${starCells}
                 </div>
                 <div class="scorecard-row">
                   <span class="scorecard-label">BRU</span>
@@ -959,6 +969,15 @@ function shotsReceivedForHole(playingHandicap, strokeIndex) {
     return 0;
   }
   return Math.floor((playingHandicap - strokeIndex + 18) / 18);
+}
+
+function strokeMarksForHole(playingHandicap, strokeIndex) {
+  if (playingHandicap <= 0) {
+    return 0;
+  }
+  const baseStrokes = Math.floor(playingHandicap / 18);
+  const remainder = playingHandicap % 18;
+  return baseStrokes + (remainder > 0 && strokeIndex <= remainder ? 1 : 0);
 }
 
 function openScoreModal(playerId) {
