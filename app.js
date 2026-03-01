@@ -863,7 +863,7 @@ async function startMatch() {
         {
           scores: existing,
           courseHandicap: course.playable ? calculateCourseHandicap(player.handicapIndex, course) : 0,
-          playingHandicap: course.playable ? calculatePlayingHandicap(player.handicapIndex, course) : 0,
+          playingHandicap: course.playable ? calculatePlayingHandicap(player.handicapIndex, course, activePlayers.length) : 0,
         },
       ];
     }),
@@ -925,20 +925,35 @@ function calculateCourseHandicap(handicapIndex, course) {
   return Math.round(calculateRawCourseHandicap(handicapIndex, course));
 }
 
-function calculatePlayingHandicap(handicapIndex, course) {
-  return Math.round(calculateRawCourseHandicap(handicapIndex, course) * 0.95);
+function getStablefordAllowance(fieldSize) {
+  return fieldSize < 30 ? 1 : 0.95;
+}
+
+function getMatchFieldSize() {
+  const scoreEntries = Object.keys(state.scores ?? {}).length;
+  if (scoreEntries > 0) {
+    return scoreEntries;
+  }
+  const activePlayers = getActivePlayers().length;
+  return activePlayers > 0 ? activePlayers : 1;
+}
+
+function calculatePlayingHandicap(handicapIndex, course, fieldSize = getMatchFieldSize()) {
+  return Math.round(calculateRawCourseHandicap(handicapIndex, course) * getStablefordAllowance(fieldSize));
 }
 
 function getPlayerMatchData(playerId) {
   const course = getSelectedCourse();
   const player = players.find((entry) => entry.id === playerId);
+  const fieldSize = getMatchFieldSize();
   const fallbackCourseHandicap = calculateCourseHandicap(player.handicapIndex, course);
+  const fallbackPlayingHandicap = calculatePlayingHandicap(player.handicapIndex, course, fieldSize);
   const match = state.scores[playerId] ?? {
     scores: {},
     courseHandicap: fallbackCourseHandicap,
-    playingHandicap: calculatePlayingHandicap(player.handicapIndex, course),
+    playingHandicap: fallbackPlayingHandicap,
   };
-  const playingHandicap = typeof match.playingHandicap === "number" ? match.playingHandicap : calculatePlayingHandicap(player.handicapIndex, course);
+  const playingHandicap = fallbackPlayingHandicap;
   const grossTotal = Object.values(match.scores).reduce((sum, value) => (typeof value === "number" ? sum + value : sum), 0);
   const playedHoles = Object.keys(match.scores).length;
   const stableford = course.holes.reduce((sum, hole) => {
