@@ -509,7 +509,7 @@ function renderSetup() {
     .map(
       (course) => `
         <option value="${course.id}" ${course.id === selectedCourse.id ? "selected" : ""}>
-          ${course.name} (${course.island})
+          ${course.name}
         </option>
       `,
     )
