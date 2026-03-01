@@ -612,6 +612,7 @@ function renderGame() {
   }
   const hole = course.holes[state.currentHole];
   const activePlayers = getActivePlayers();
+  const matchAllowances = getMatchStrokeAllowances(activePlayers);
   const matchTitle = document.querySelector("#match-title");
   const scoreboard = document.querySelector("#scoreboard");
   const gpsToggle = document.querySelector("#gps-toggle");
@@ -628,7 +629,7 @@ function renderGame() {
   activePlayers.forEach((player) => {
     const playerState = getPlayerMatchData(player.id);
     const holeScore = playerState.scores[hole.number] ?? null;
-    const shotsOnHole = shotsReceivedForHole(playerState.courseHandicap, hole.strokeIndex);
+    const shotsOnHole = strokeMarksForHole(matchAllowances[player.id] ?? 0, hole.strokeIndex);
     const holeStableford = playerState.holeStableford[hole.number];
 
     const row = document.createElement("div");
@@ -698,6 +699,7 @@ function renderGame() {
 
 function renderSummary(container, activePlayers) {
   const course = getSelectedCourse();
+  const matchAllowances = getMatchStrokeAllowances(activePlayers);
   const ranking = activePlayers
     .map((player) => {
       const data = getPlayerMatchData(player.id);
@@ -736,7 +738,7 @@ function renderSummary(container, activePlayers) {
           const data = getPlayerMatchData(player.id);
           const starCells = course.holes
             .map((hole) => {
-              const stars = "*".repeat(strokeMarksForHole(data.courseHandicap, hole.strokeIndex));
+              const stars = "*".repeat(strokeMarksForHole(matchAllowances[player.id] ?? 0, hole.strokeIndex));
               return `<span class="scorecard-cell">${stars || "-"}</span>`;
             })
             .join("");
@@ -978,6 +980,22 @@ function strokeMarksForHole(playingHandicap, strokeIndex) {
   const baseStrokes = Math.floor(playingHandicap / 18);
   const remainder = playingHandicap % 18;
   return baseStrokes + (remainder > 0 && strokeIndex <= remainder ? 1 : 0);
+}
+
+function getMatchStrokeAllowances(activePlayers) {
+  if (!Array.isArray(activePlayers) || activePlayers.length === 0) {
+    return {};
+  }
+
+  const handicaps = activePlayers.map((player) => ({
+    id: player.id,
+    courseHandicap: getPlayerMatchData(player.id).courseHandicap,
+  }));
+  const lowestHandicap = Math.min(...handicaps.map((entry) => entry.courseHandicap));
+
+  return Object.fromEntries(
+    handicaps.map((entry) => [entry.id, Math.max(0, entry.courseHandicap - lowestHandicap)]),
+  );
 }
 
 function openScoreModal(playerId) {
