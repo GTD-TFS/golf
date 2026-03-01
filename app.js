@@ -749,8 +749,7 @@ function renderSummary(container, activePlayers) {
           const stbCells = course.holes
             .map((hole) => {
               const points = data.holeStableford[hole.number];
-              const colorClass =
-                points == null ? "" : points <= 0 ? "stb-low" : points === 1 ? "stb-mid" : points <= 3 ? "stb-good" : "stb-hot";
+              const colorClass = getStablefordCellClass(points);
               return `<span class="scorecard-cell ${colorClass}">${points == null ? "-" : points}</span>`;
             })
             .join("");
@@ -1107,16 +1106,27 @@ function getStablefordClass(points) {
   if (points == null) {
     return "";
   }
-  if (points <= 1) {
-    return "stableford-low";
+  if (points <= 0) {
+    return "stableford-0";
+  }
+  if (points === 1) {
+    return "stableford-1";
   }
   if (points === 2) {
-    return "stableford-mid";
+    return "stableford-2";
   }
   if (points === 3) {
-    return "stableford-good";
+    return "stableford-3";
   }
-  return "stableford-hot";
+  if (points === 4) {
+    return "stableford-4";
+  }
+  return "stableford-5";
+}
+
+function getStablefordCellClass(points) {
+  const panelClass = getStablefordClass(points);
+  return panelClass ? panelClass.replace("stableford-", "stb-") : "";
 }
 
 function getCourseHint(course) {
