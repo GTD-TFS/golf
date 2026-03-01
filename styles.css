@@ -75,6 +75,29 @@ body[data-view="game"] .hero {
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
 }
 
+.menu-button {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  border: 0;
+  cursor: pointer;
+  font-size: 1.2rem;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--sea);
+  box-shadow: 0 10px 18px rgba(10, 40, 60, 0.14);
+}
+
+.menu-button-inverse {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
 #app {
   margin-top: 10px;
 }
@@ -205,6 +228,11 @@ body[data-view="game"] .hero {
   justify-content: center;
 }
 
+.account-panel,
+.auth-panel {
+  background: linear-gradient(180deg, rgba(95, 174, 230, 0.18), rgba(255, 255, 255, 0.96));
+}
+
 .course-panel {
   background: linear-gradient(180deg, rgba(95, 174, 230, 0.22), rgba(255, 255, 255, 0.96));
 }
@@ -228,6 +256,16 @@ body[data-view="game"] .hero {
 .field {
   display: grid;
   gap: 6px;
+}
+
+.auth-form {
+  display: grid;
+  gap: 10px;
+}
+
+.auth-message {
+  min-height: 1.1rem;
+  margin: 0;
 }
 
 .field-label {
@@ -614,6 +652,30 @@ button:disabled {
 .summary-list {
   display: grid;
   gap: 10px;
+}
+
+.history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.history-entry {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(17, 119, 185, 0.14);
+  background: linear-gradient(180deg, rgba(95, 174, 230, 0.18), rgba(255, 255, 255, 0.95));
+  text-align: left;
+  color: var(--ink);
+}
+
+.history-entry-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .summary-row {

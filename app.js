@@ -1,5 +1,6 @@
 const STORAGE_KEY = "golf-canarias-state-v2";
 const COURSE_DATA_CACHE_KEY = "golf-canarias-course-cache-v9";
+const MATCH_HISTORY_LOCAL_KEY = "golf-canarias-match-history-v1";
 const RFEG_HANDICAP_URL = "https://rfeg.es/jugar/handicap";
 const RFEG_API_URL = "https://api.rfeg.es/web/search/handicap";
 const RFEG_PROXY_PAGE_URL = "https://api.allorigins.win/raw?url=https://rfeg.es/jugar/handicap";
@@ -390,12 +391,23 @@ const scorePad = document.querySelector("#score-pad");
 const summaryModal = document.querySelector("#summary-modal");
 const summaryModalContent = document.querySelector("#summary-modal-content");
 const closeSummaryModalButton = document.querySelector("#close-summary-modal");
+const headerHistoryButton = document.querySelector("#header-history-button");
+const baseStoredState = loadStoredState();
+const localMatchStore = createLocalMatchStore();
+let firebaseMatchStore = null;
+let firebaseServices = null;
 
 const state = {
-  view: "setup",
-  selectedCourseId: loadStoredState().selectedCourseId ?? courses[0].id,
-  currentHole: 0,
-  scores: loadStoredState().scores ?? {},
+  view: baseStoredState.view === "game" ? "game" : "setup",
+  selectedCourseId: baseStoredState.selectedCourseId ?? courses[0].id,
+  currentHole: baseStoredState.currentHole ?? 0,
+  scores: baseStoredState.scores ?? {},
+  activeMatchId: baseStoredState.activeMatchId ?? null,
+  activeMatchCreatedAt: baseStoredState.activeMatchCreatedAt ?? null,
+  matchHistory: [],
+  authReady: false,
+  currentUser: null,
+  authMessage: "",
   modalPlayerId: null,
   gps: {
     enabled: false,
@@ -407,7 +419,15 @@ const state = {
 };
 
 registerServiceWorker();
-render();
+headerHistoryButton?.addEventListener("click", () => {
+  if (!state.currentUser) {
+    state.view = "setup";
+    render();
+    return;
+  }
+  void openHistoryView();
+});
+void bootstrapApp();
 
 function createCourse(name, island, config) {
   const par = config.holes.reduce((sum, hole) => sum + hole[1], 0);
@@ -449,14 +469,304 @@ function createCourse(name, island, config) {
   };
 }
 
+async function bootstrapApp() {
+  await initMatchStore();
+  if (!state.authReady) {
+    state.authReady = true;
+  }
+  if (state.currentUser) {
+    await refreshMatchHistory();
+  }
+  updateHeaderControls();
+  render();
+}
+
+async function initMatchStore() {
+  const firebaseConfig = PRIVATE_CONFIG.firebase;
+  if (!firebaseConfig?.projectId || !firebaseConfig?.appId || !firebaseConfig?.apiKey) {
+    state.authReady = true;
+    return;
+  }
+
+  try {
+    const [{ initializeApp }, authModule, firestoreModule] = await Promise.all([
+      import("https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js"),
+      import("https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js"),
+      import("https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js"),
+    ]);
+    const firebaseApp = initializeApp(firebaseConfig);
+    const auth = authModule.getAuth(firebaseApp);
+    await authModule.setPersistence(auth, authModule.browserLocalPersistence);
+    const db = firestoreModule.getFirestore(firebaseApp);
+    firebaseServices = {
+      auth,
+      authModule,
+      db,
+      firestoreModule,
+    };
+    await new Promise((resolve) => {
+      let initialStateHandled = false;
+      authModule.onAuthStateChanged(auth, async (user) => {
+        state.currentUser = user
+          ? {
+              uid: user.uid,
+              email: user.email ?? "",
+            }
+          : null;
+        state.authReady = true;
+        firebaseMatchStore = user ? createFirebaseMatchStore(db, firestoreModule, user.uid) : null;
+        if (!user) {
+          state.matchHistory = [];
+          state.view = "setup";
+          state.activeMatchId = null;
+          state.activeMatchCreatedAt = null;
+          state.scores = {};
+        } else {
+          await refreshMatchHistory();
+        }
+        updateHeaderControls();
+        persistState();
+        render();
+        if (!initialStateHandled) {
+          initialStateHandled = true;
+          resolve();
+        }
+      });
+    });
+  } catch (error) {
+    console.warn("Firebase no disponible; se usará almacenamiento local.", error);
+    firebaseMatchStore = null;
+    state.authReady = true;
+  }
+}
+
+function createLocalMatchStore() {
+  return {
+    async createMatch(record) {
+      const history = loadLocalMatchHistory();
+      history.unshift(record);
+      saveLocalMatchHistory(history);
+      return record;
+    },
+    async updateMatch(record) {
+      const history = loadLocalMatchHistory();
+      const index = history.findIndex((entry) => entry.id === record.id);
+      if (index === -1) {
+        history.unshift(record);
+      } else {
+        history[index] = record;
+      }
+      saveLocalMatchHistory(history);
+      return record;
+    },
+    async listMatches() {
+      return loadLocalMatchHistory();
+    },
+    async getMatch(matchId) {
+      return loadLocalMatchHistory().find((entry) => entry.id === matchId) ?? null;
+    },
+  };
+}
+
+function createFirebaseMatchStore(db, firestoreModule, ownerUid) {
+  const { addDoc, collection, doc, getDoc, getDocs, query, setDoc, where } = firestoreModule;
+  const matchesCollection = collection(db, "matches");
+
+  return {
+    async createMatch(record) {
+      const payload = sanitizeMatchRecord(record);
+      const reference = await addDoc(matchesCollection, payload);
+      return { ...payload, id: reference.id };
+    },
+    async updateMatch(record) {
+      const payload = sanitizeMatchRecord(record);
+      await setDoc(doc(db, "matches", record.id), payload, { merge: true });
+      return record;
+    },
+    async listMatches() {
+      const snapshot = await getDocs(query(matchesCollection, where("ownerUid", "==", ownerUid)));
+      return snapshot.docs
+        .map((entry) => normalizeStoredMatch({ id: entry.id, ...entry.data() }))
+        .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
+    },
+    async getMatch(matchId) {
+      const snapshot = await getDoc(doc(db, "matches", matchId));
+      if (!snapshot.exists()) {
+        return null;
+      }
+      return normalizeStoredMatch({ id: snapshot.id, ...snapshot.data() });
+    },
+  };
+}
+
+function sanitizeMatchRecord(record) {
+  return {
+    ownerUid: record.ownerUid ?? "",
+    ownerEmail: record.ownerEmail ?? "",
+    courseId: record.courseId,
+    courseName: record.courseName,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    currentHole: record.currentHole,
+    status: record.status,
+    players: record.players.map((player) => ({
+      id: player.id,
+      name: player.name,
+      license: player.license ?? "",
+      handicapIndex: player.handicapIndex,
+    })),
+    scores: record.scores,
+  };
+}
+
+function normalizeStoredMatch(record) {
+  return {
+    ...record,
+    ownerUid: record.ownerUid ?? "",
+    ownerEmail: record.ownerEmail ?? "",
+    players: Array.isArray(record.players) ? record.players : [],
+    scores: record.scores && typeof record.scores === "object" ? record.scores : {},
+    status: record.status ?? "in_progress",
+    currentHole: Number.isInteger(record.currentHole) ? record.currentHole : 0,
+  };
+}
+
+function loadLocalMatchHistory() {
+  try {
+    const entries = JSON.parse(localStorage.getItem(MATCH_HISTORY_LOCAL_KEY) ?? "[]");
+    return Array.isArray(entries)
+      ? entries.map(normalizeStoredMatch).sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalMatchHistory(entries) {
+  localStorage.setItem(MATCH_HISTORY_LOCAL_KEY, JSON.stringify(entries));
+}
+
+async function createMatchRecord(record) {
+  let persisted = record;
+  if (firebaseMatchStore) {
+    try {
+      persisted = await firebaseMatchStore.createMatch(record);
+    } catch (error) {
+      console.warn("No se pudo crear en Firebase; se guarda en local.", error);
+    }
+  }
+  await localMatchStore.createMatch(persisted);
+  return persisted;
+}
+
+async function updateMatchRecord(record) {
+  if (firebaseMatchStore) {
+    try {
+      await firebaseMatchStore.updateMatch(record);
+    } catch (error) {
+      console.warn("No se pudo actualizar en Firebase; se mantiene copia local.", error);
+    }
+  }
+  await localMatchStore.updateMatch(record);
+  return record;
+}
+
+async function refreshMatchHistory() {
+  if (!state.currentUser && firebaseServices) {
+    state.matchHistory = [];
+    return [];
+  }
+  if (firebaseMatchStore) {
+    try {
+      const entries = await firebaseMatchStore.listMatches();
+      state.matchHistory = entries;
+      saveLocalMatchHistory(entries);
+      return entries;
+    } catch (error) {
+      console.warn("No se pudo leer Firebase; se usa historial local.", error);
+    }
+  }
+  const entries = await localMatchStore.listMatches();
+  state.matchHistory = entries;
+  return entries;
+}
+
 function render() {
+  updateHeaderControls();
   document.body.dataset.view = state.view;
   app.innerHTML = "";
+  if (!state.authReady) {
+    app.innerHTML = '<section class="setup-screen"><div class="panel"><p class="helper-text">Conectando con Firebase...</p></div></section>';
+    return;
+  }
+  if (!state.currentUser) {
+    renderAuth();
+    return;
+  }
   if (state.view === "setup") {
     renderSetup();
     return;
   }
+  if (state.view === "history") {
+    renderHistory();
+    return;
+  }
   renderGame();
+}
+
+function updateHeaderControls() {
+  if (!headerHistoryButton) {
+    return;
+  }
+  headerHistoryButton.hidden = !state.currentUser;
+}
+
+function renderAuth() {
+  const template = document.querySelector("#auth-template");
+  const fragment = template.content.cloneNode(true);
+  app.appendChild(fragment);
+
+  const form = document.querySelector("#auth-form");
+  const emailInput = document.querySelector("#auth-email");
+  const passwordInput = document.querySelector("#auth-password");
+  const submitButton = document.querySelector("#auth-submit");
+  const message = document.querySelector("#auth-message");
+
+  message.textContent = state.authMessage;
+  emailInput.value = loadStoredState().lastLoginEmail ?? "";
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!firebaseServices?.auth || !firebaseServices?.authModule) {
+      state.authMessage = "Firebase Auth no está disponible.";
+      render();
+      return;
+    }
+
+    submitButton.disabled = true;
+    submitButton.textContent = "Entrando...";
+    state.authMessage = "";
+    try {
+      await firebaseServices.authModule.signInWithEmailAndPassword(
+        firebaseServices.auth,
+        emailInput.value.trim(),
+        passwordInput.value,
+      );
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          ...loadStoredState(),
+          lastLoginEmail: emailInput.value.trim(),
+        }),
+      );
+    } catch (error) {
+      state.authMessage = getFirebaseAuthMessage(error);
+      render();
+    } finally {
+      submitButton.disabled = false;
+      submitButton.textContent = "Entrar";
+    }
+  });
 }
 
 function renderSetup() {
@@ -464,10 +774,14 @@ function renderSetup() {
   const fragment = template.content.cloneNode(true);
   app.appendChild(fragment);
 
+  const currentUserEmail = document.querySelector("#current-user-email");
   const playersList = document.querySelector("#players-list");
   const courseSelect = document.querySelector("#course-select");
   const startButton = document.querySelector("#start-match");
   const addPlayerButton = document.querySelector("#add-player");
+  const signOutButton = document.querySelector("#sign-out-button");
+
+  currentUserEmail.textContent = state.currentUser?.email || "Sesión iniciada";
 
   players.forEach((player) => {
     const row = document.createElement("div");
@@ -567,6 +881,12 @@ function renderSetup() {
   });
 
   addPlayerButton.addEventListener("click", addPlayer);
+  signOutButton.addEventListener("click", async () => {
+    if (!firebaseServices?.auth || !firebaseServices?.authModule) {
+      return;
+    }
+    await firebaseServices.authModule.signOut(firebaseServices.auth);
+  });
 
   startButton.addEventListener("click", async () => {
     startButton.disabled = true;
@@ -580,6 +900,56 @@ function renderSetup() {
       }
     }
   });
+}
+
+function renderHistory() {
+  const template = document.querySelector("#history-template");
+  const fragment = template.content.cloneNode(true);
+  app.appendChild(fragment);
+
+  const historyList = document.querySelector("#history-list");
+  const closeHistoryButton = document.querySelector("#close-history");
+
+  if (state.matchHistory.length === 0) {
+    historyList.innerHTML = '<p class="helper-text">Todavía no hay partidas guardadas.</p>';
+  } else {
+    historyList.innerHTML = state.matchHistory
+      .map((match) => {
+        const opponents = formatMatchOpponents(match.players);
+        return `
+          <button class="history-entry" type="button" data-open-match="${match.id}">
+            <div class="history-entry-top">
+              <strong>${formatMatchDate(match.updatedAt)}</strong>
+              <span class="panel-chip">${match.status === "completed" ? "Terminada" : "En juego"}</span>
+            </div>
+            <span>${match.courseName}</span>
+            <span>${opponents}</span>
+          </button>
+        `;
+      })
+      .join("");
+  }
+
+  historyList.addEventListener("click", (event) => {
+    const trigger = event.target.closest("[data-open-match]");
+    if (!trigger) {
+      return;
+    }
+    void openStoredMatchSummary(trigger.dataset.openMatch);
+  });
+
+  closeHistoryButton.addEventListener("click", () => {
+    state.view = "setup";
+    persistState();
+    render();
+  });
+}
+
+async function openHistoryView() {
+  await refreshMatchHistory();
+  state.view = "history";
+  persistState();
+  render();
 }
 
 function renderGame() {
@@ -679,29 +1049,118 @@ function renderGame() {
     await toggleGps();
   });
 
-  document.querySelector("#end-match").addEventListener("click", (event) => {
+  document.querySelector("#end-match").addEventListener("click", async (event) => {
     event.preventDefault();
-    endMatch();
+    await endMatch();
   });
 
-  document.querySelector("#prev-hole").addEventListener("click", () => {
+  document.querySelector("#prev-hole").addEventListener("click", async () => {
     state.currentHole = (state.currentHole + course.holes.length - 1) % course.holes.length;
+    await saveActiveMatchProgress();
     persistState();
     render();
   });
 
-  document.querySelector("#next-hole").addEventListener("click", () => {
+  document.querySelector("#next-hole").addEventListener("click", async () => {
     state.currentHole = (state.currentHole + 1) % course.holes.length;
+    await saveActiveMatchProgress();
     persistState();
     render();
   });
 }
 
-function renderSummary(container, activePlayers) {
+function buildMatchSnapshot(status = "in_progress") {
+  const activePlayers = getActivePlayers().map((player) => ({
+    id: player.id,
+    name: player.name,
+    license: player.license ?? "",
+    handicapIndex: player.handicapIndex,
+  }));
   const course = getSelectedCourse();
+  const nowIso = new Date().toISOString();
+
+  return {
+    id: state.activeMatchId ?? `local-${Date.now()}`,
+    ownerUid: state.currentUser?.uid ?? "",
+    ownerEmail: state.currentUser?.email ?? "",
+    courseId: course.id,
+    courseName: course.name,
+    createdAt: state.activeMatchCreatedAt ?? nowIso,
+    updatedAt: nowIso,
+    currentHole: state.currentHole,
+    status,
+    players: activePlayers,
+    scores: structuredClone(state.scores),
+  };
+}
+
+function getMatchCourse(matchRecord) {
+  return courses.find((course) => course.id === matchRecord.courseId) ?? getSelectedCourse();
+}
+
+function getPlayerMatchDataFromRecord(matchRecord, playerId, course = getMatchCourse(matchRecord)) {
+  const player = matchRecord.players.find((entry) => entry.id === playerId);
+  if (!player) {
+    return {
+      scores: {},
+      courseHandicap: 0,
+      playingHandicap: 0,
+      grossTotal: 0,
+      playedHoles: 0,
+      stableford: 0,
+      holeStableford: {},
+    };
+  }
+
+  const fallbackCourseHandicap = calculateCourseHandicap(player.handicapIndex, course);
+  const fallbackPlayingHandicap = calculatePlayingHandicap(player.handicapIndex, course);
+  const match = matchRecord.scores[playerId] ?? {
+    scores: {},
+    courseHandicap: fallbackCourseHandicap,
+    playingHandicap: fallbackPlayingHandicap,
+  };
+  const playingHandicap = match.playingHandicap ?? fallbackPlayingHandicap;
+  const grossTotal = Object.values(match.scores).reduce((sum, value) => (typeof value === "number" ? sum + value : sum), 0);
+  const playedHoles = Object.keys(match.scores).length;
+  const stableford = course.holes.reduce((sum, hole) => {
+    const gross = match.scores[hole.number];
+    if (gross == null || gross === "-") {
+      return sum;
+    }
+    const net = gross - strokesReceivedForHole(playingHandicap, hole, course);
+    return sum + Math.max(0, 2 + hole.par - net);
+  }, 0);
+  const holeStableford = Object.fromEntries(
+    course.holes.map((hole) => {
+      const gross = match.scores[hole.number];
+      if (gross == null) {
+        return [hole.number, null];
+      }
+      if (gross === "-") {
+        return [hole.number, 0];
+      }
+      const net = gross - strokesReceivedForHole(playingHandicap, hole, course);
+      return [hole.number, Math.max(0, 2 + hole.par - net)];
+    }),
+  );
+
+  return {
+    scores: match.scores,
+    courseHandicap: match.courseHandicap ?? fallbackCourseHandicap,
+    playingHandicap,
+    grossTotal,
+    playedHoles,
+    stableford,
+    holeStableford,
+  };
+}
+
+function renderSummary(container, activePlayers, options = {}) {
+  const matchRecord = options.matchRecord ?? buildMatchSnapshot();
+  const course = getMatchCourse(matchRecord);
   const ranking = activePlayers
     .map((player) => {
-      const data = getPlayerMatchData(player.id);
+      const data = getPlayerMatchDataFromRecord(matchRecord, player.id, course);
       return {
         name: player.name.toUpperCase(),
         stableford: data.stableford,
@@ -734,7 +1193,7 @@ function renderSummary(container, activePlayers) {
     <div class="final-card">
       ${activePlayers
         .map((player) => {
-          const data = getPlayerMatchData(player.id);
+          const data = getPlayerMatchDataFromRecord(matchRecord, player.id, course);
           const starCells = course.holes
             .map((hole) => {
               const stars = "*".repeat(strokesReceivedForHole(data.playingHandicap, hole, course));
@@ -791,11 +1250,11 @@ function renderSummary(container, activePlayers) {
   `;
 }
 
-function openSummaryModal(activePlayers) {
+function openSummaryModal(activePlayers, options = {}) {
   summaryModalContent.innerHTML = "";
-  renderSummary(summaryModalContent, activePlayers);
+  renderSummary(summaryModalContent, activePlayers, options);
   summaryModalContent.querySelector("[data-download-summary]")?.addEventListener("click", () => {
-    downloadResults(activePlayers);
+    downloadResults(activePlayers, options);
   });
   summaryModal.classList.remove("hidden");
   summaryModal.setAttribute("aria-hidden", "false");
@@ -812,12 +1271,13 @@ function escapeCsvCell(value) {
   return `"${escaped}"`;
 }
 
-function downloadResults(activePlayers) {
-  const course = getSelectedCourse();
+function downloadResults(activePlayers, options = {}) {
+  const matchRecord = options.matchRecord ?? buildMatchSnapshot();
+  const course = getMatchCourse(matchRecord);
   const rows = [["Partido", `${activePlayers.map((player) => player.name.split(" ")[0]).join(" vs ")} - ${course.name}`], []];
 
   activePlayers.forEach((player) => {
-    const data = getPlayerMatchData(player.id);
+    const data = getPlayerMatchDataFromRecord(matchRecord, player.id, course);
     rows.push(["Jugador", player.name.toUpperCase()]);
     rows.push(["Stableford total", data.stableford]);
     rows.push(["Bruto total", data.grossTotal]);
@@ -838,7 +1298,7 @@ function downloadResults(activePlayers) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `${slugify(`${course.name}-resultados`)}.csv`;
+  link.download = `${slugify(`${course.name}-${formatMatchDate(matchRecord.updatedAt)}-resultados`)}.csv`;
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -860,21 +1320,27 @@ async function startMatch() {
 
   state.scores = Object.fromEntries(
     activePlayers.map((player) => {
-      const existing = state.scores[player.id]?.scores ?? {};
       return [
         player.id,
         {
-          scores: existing,
+          scores: {},
           courseHandicap: course.playable ? calculateCourseHandicap(player.handicapIndex, course) : 0,
           playingHandicap: course.playable ? calculatePlayingHandicap(player.handicapIndex, course) : 0,
         },
       ];
     }),
   );
-  state.view = "game";
   state.currentHole = 0;
+  const createdMatch = await createMatchRecord({
+    ...buildMatchSnapshot(),
+    id: `match-${Date.now()}`,
+  });
+  state.activeMatchId = createdMatch.id;
+  state.activeMatchCreatedAt = createdMatch.createdAt;
+  state.view = "game";
   state.gps.enabled = false;
   state.gps.distanceMeters = null;
+  await refreshMatchHistory();
   persistState();
   render();
 
@@ -902,21 +1368,91 @@ async function toggleGps() {
   }
 }
 
-function endMatch() {
+async function endMatch() {
   const confirmed = window.confirm("¿Terminar partido y volver al inicio? Se conservarán los últimos valores guardados.");
   if (!confirmed) {
     return;
   }
 
+  await saveActiveMatchProgress("completed");
   closeScoreModal();
   closeSummaryModal();
   state.view = "setup";
   state.currentHole = 0;
   state.scores = {};
+  state.activeMatchId = null;
+  state.activeMatchCreatedAt = null;
   state.gps.enabled = false;
   state.gps.distanceMeters = null;
+  await refreshMatchHistory();
   persistState();
   render();
+}
+
+async function saveActiveMatchProgress(status = "in_progress") {
+  if (!state.activeMatchId) {
+    return;
+  }
+
+  const snapshot = buildMatchSnapshot(status);
+  snapshot.id = state.activeMatchId;
+  snapshot.createdAt = state.activeMatchCreatedAt ?? snapshot.createdAt;
+  await updateMatchRecord(snapshot);
+  await refreshMatchHistory();
+}
+
+async function openStoredMatchSummary(matchId) {
+  let record = state.matchHistory.find((entry) => entry.id === matchId) ?? null;
+
+  if (!record && firebaseMatchStore) {
+    try {
+      record = await firebaseMatchStore.getMatch(matchId);
+    } catch (error) {
+      console.warn("No se pudo leer la partida en Firebase.", error);
+    }
+  }
+
+  if (!record) {
+    record = await localMatchStore.getMatch(matchId);
+  }
+  if (!record) {
+    alert("No se encontró la partida.");
+    return;
+  }
+
+  openSummaryModal(record.players, { matchRecord: record });
+}
+
+function formatMatchOpponents(playersList) {
+  return (playersList ?? []).map((player) => player.name.split(" ")[0]).join(" vs ");
+}
+
+function formatMatchDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Sin fecha";
+  }
+  return date.toLocaleString("es-ES", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function getFirebaseAuthMessage(error) {
+  const code = error?.code ?? "";
+  if (code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found") {
+    return "Email o contraseña incorrectos.";
+  }
+  if (code === "auth/invalid-email") {
+    return "El email no es válido.";
+  }
+  if (code === "auth/too-many-requests") {
+    return "Demasiados intentos. Espera un momento y vuelve a probar.";
+  }
+  return "No se pudo iniciar sesión.";
 }
 
 function roundHalfUp(value) {
@@ -948,52 +1484,7 @@ function calculatePlayingHandicap(handicapIndex, course) {
 }
 
 function getPlayerMatchData(playerId) {
-  const course = getSelectedCourse();
-  const player = players.find((entry) => entry.id === playerId);
-  const fallbackCourseHandicap = calculateCourseHandicap(player.handicapIndex, course);
-  const fallbackPlayingHandicap = calculatePlayingHandicap(player.handicapIndex, course);
-  const match = state.scores[playerId] ?? {
-    scores: {},
-    courseHandicap: fallbackCourseHandicap,
-    playingHandicap: fallbackPlayingHandicap,
-  };
-  const playingHandicap = fallbackPlayingHandicap;
-  const grossTotal = Object.values(match.scores).reduce((sum, value) => (typeof value === "number" ? sum + value : sum), 0);
-  const playedHoles = Object.keys(match.scores).length;
-  const stableford = course.holes.reduce((sum, hole) => {
-    const gross = match.scores[hole.number];
-    if (gross == null) {
-      return sum;
-    }
-    if (gross === "-") {
-      return sum;
-    }
-    const net = gross - strokesReceivedForHole(playingHandicap, hole, course);
-    return sum + Math.max(0, 2 + hole.par - net);
-  }, 0);
-  const holeStableford = Object.fromEntries(
-    course.holes.map((hole) => {
-      const gross = match.scores[hole.number];
-      if (gross == null) {
-        return [hole.number, null];
-      }
-      if (gross === "-") {
-        return [hole.number, 0];
-      }
-      const net = gross - strokesReceivedForHole(playingHandicap, hole, course);
-      return [hole.number, Math.max(0, 2 + hole.par - net)];
-    }),
-  );
-
-  return {
-    scores: match.scores,
-    courseHandicap: match.courseHandicap,
-    playingHandicap,
-    grossTotal,
-    playedHoles,
-    stableford,
-    holeStableford,
-  };
+  return getPlayerMatchDataFromRecord(buildMatchSnapshot(), playerId);
 }
 
 function getStrokeRankForHole(course, holeNumber) {
@@ -1047,7 +1538,7 @@ function closeScoreModal() {
   modal.setAttribute("aria-hidden", "true");
 }
 
-scorePad.addEventListener("click", (event) => {
+scorePad.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-value]");
   if (!button || !state.modalPlayerId) {
     return;
@@ -1077,6 +1568,7 @@ scorePad.addEventListener("click", (event) => {
   }
 
   closeScoreModal();
+  await saveActiveMatchProgress();
   persistState();
   render();
 });
@@ -1335,6 +1827,7 @@ function haversineMeters(lat1, lng1, lat2, lng2) {
 }
 
 function persistState() {
+  const stored = loadStoredState();
   localStorage.setItem(
     STORAGE_KEY,
     JSON.stringify({
@@ -1350,7 +1843,12 @@ function persistState() {
         federationAttemptedAt: player.federationAttemptedAt,
         removable: player.removable ?? false,
       })),
+      view: state.view === "game" ? "game" : "setup",
       selectedCourseId: state.selectedCourseId,
+      currentHole: state.currentHole,
+      activeMatchId: state.activeMatchId,
+      activeMatchCreatedAt: state.activeMatchCreatedAt,
+      lastLoginEmail: stored.lastLoginEmail ?? "",
       scores: state.scores,
     }),
   );

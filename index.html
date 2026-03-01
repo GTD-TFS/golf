@@ -24,6 +24,9 @@
       <header class="hero">
         <div class="hero-brand">
           <h1>Bejar Golf App</h1>
+          <button class="menu-button menu-button-inverse" id="header-history-button" type="button" aria-label="Abrir historial">
+            ☰
+          </button>
         </div>
       </header>
 
@@ -62,6 +65,14 @@
 
     <template id="setup-template">
       <section class="setup-screen">
+        <div class="panel account-panel">
+          <div class="panel-title">
+            <span>Cuenta</span>
+            <button id="sign-out-button" class="compact-button" type="button">Salir</button>
+          </div>
+          <p id="current-user-email" class="helper-text"></p>
+        </div>
+
         <div class="panel players-panel">
           <div class="panel-title"><span>Jugadores</span></div>
           <div id="players-list" class="players-list"></div>
@@ -126,7 +137,46 @@
       </section>
     </template>
 
-    <script src="config.local.js"></script>
+    <template id="history-template">
+      <section class="setup-screen">
+        <div class="panel history-panel">
+          <div class="panel-title">
+            <span>Historial de partidas</span>
+            <span class="panel-chip">Firebase</span>
+          </div>
+          <div id="history-list" class="history-list"></div>
+        </div>
+        <div class="setup-dock">
+          <button id="close-history" class="secondary-action" type="button">Volver</button>
+        </div>
+      </section>
+    </template>
+
+    <template id="auth-template">
+      <section class="setup-screen">
+        <div class="panel auth-panel">
+          <div class="panel-title">
+            <span>Acceso</span>
+            <span class="panel-chip">Firebase</span>
+          </div>
+          <p class="helper-text">Entra con tu email y contraseña. El móvil mantendrá la sesión abierta.</p>
+          <form id="auth-form" class="auth-form">
+            <label class="field">
+              <span class="field-label">Email</span>
+              <input id="auth-email" type="email" autocomplete="email" required />
+            </label>
+            <label class="field">
+              <span class="field-label">Contraseña</span>
+              <input id="auth-password" type="password" autocomplete="current-password" required />
+            </label>
+            <p id="auth-message" class="helper-text auth-message"></p>
+            <button id="auth-submit" class="primary-action" type="submit">Entrar</button>
+          </form>
+        </div>
+      </section>
+    </template>
+
+    <script src="config.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
