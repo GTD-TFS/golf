@@ -7,6 +7,7 @@ const OPEN_PROXY_BASE_URL = "https://api.allorigins.win/raw?url=";
 const NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search";
 const NETWORK_TIMEOUT_MS = 12000;
 const OVERPASS_TIMEOUT_SECONDS = 60;
+const INDIVIDUAL_STABLEFORD_ALLOWANCE = 1;
 const PRIVATE_CONFIG = window.GOLF_PRIVATE_CONFIG ?? {};
 const COURSE_GPS_API = {
   provider: "osm",
@@ -130,30 +131,30 @@ const verifiedCourseConfigs = {
   },
   "amarilla-golf": {
     exactGreens: true,
-    sourceLabel: "Scorecard principal verificado + greens exactos fijados",
+    sourceLabel: "Scorecard Amarillos verificado + greens exactos fijados",
     sourceUrl: "https://amarillagolf.es/golf/campo-18-hoyos/",
-    tee: "Blancas",
-    slope: 125,
-    courseRating: 71.1,
+    tee: "Amarillos",
+    slope: 123,
+    courseRating: 69.4,
     holes: [
-      [1, 5, 2, 461, 28.02789058381047, -16.619070502254914],
-      [2, 4, 16, 297, 28.0267713593, -16.6191970423],
-      [3, 3, 14, 159, 28.022995543778567, -16.619902939527886],
-      [4, 4, 5, 348, 28.0193220828, -16.6191904194],
-      [5, 3, 17, 127, 28.0197814349, -16.6180920599],
-      [6, 5, 13, 458, 28.0232094635, -16.6184801153],
-      [7, 4, 11, 325, 28.028487700423643, -16.618153362072956],
-      [8, 3, 15, 101, 28.0277508572, -16.6145207862],
-      [9, 4, 1, 318, 28.02507961450293, -16.617426094772952],
-      [10, 5, 3, 444, 28.026011972612697, -16.61370768829099],
-      [11, 4, 7, 338, 28.02209288009303, -16.613175745999996],
-      [12, 4, 9, 356, 28.0212814032, -16.6136657254],
-      [13, 4, 6, 354, 28.024960361693754, -16.61374264468197],
-      [14, 4, 4, 379, 28.0274814239, -16.6133823638],
-      [15, 3, 18, 121, 28.029902990015156, -16.617331051754917],
-      [16, 4, 8, 325, 28.0357940788, -16.6151307755],
-      [17, 3, 10, 144, 28.0340250643, -16.6168317722],
-      [18, 5, 12, 424, 28.032136458604647, -16.618670902754925],
+      [1, 5, 4, 462, 28.02789058381047, -16.619070502254914],
+      [2, 4, 16, 300, 28.0267713593, -16.6191970423],
+      [3, 3, 10, 155, 28.022995543778567, -16.619902939527886],
+      [4, 4, 6, 360, 28.0193220828, -16.6191904194],
+      [5, 3, 18, 118, 28.0197814349, -16.6180920599],
+      [6, 5, 12, 478, 28.0232094635, -16.6184801153],
+      [7, 4, 8, 331, 28.028487700423643, -16.618153362072956],
+      [8, 3, 14, 100, 28.0277508572, -16.6145207862],
+      [9, 4, 2, 345, 28.02507961450293, -16.617426094772952],
+      [10, 5, 11, 450, 28.026011972612697, -16.61370768829099],
+      [11, 4, 5, 348, 28.02209288009303, -16.613175745999996],
+      [12, 4, 9, 363, 28.0212814032, -16.6136657254],
+      [13, 4, 3, 344, 28.024960361693754, -16.61374264468197],
+      [14, 4, 1, 388, 28.0274814239, -16.6133823638],
+      [15, 3, 17, 121, 28.029902990015156, -16.617331051754917],
+      [16, 4, 7, 335, 28.0357940788, -16.6151307755],
+      [17, 3, 13, 140, 28.0340250643, -16.6168317722],
+      [18, 5, 15, 450, 28.032136458604647, -16.618670902754925],
     ],
   },
   "golf-costa-adeje": {
@@ -628,7 +629,7 @@ function renderGame() {
   activePlayers.forEach((player) => {
     const playerState = getPlayerMatchData(player.id);
     const holeScore = playerState.scores[hole.number] ?? null;
-    const shotsOnHole = strokeMarksForHole(playerState.playingHandicap, hole.strokeIndex);
+    const shotsOnHole = strokesReceivedForHole(playerState.playingHandicap, hole, course);
     const holeStableford = playerState.holeStableford[hole.number];
 
     const row = document.createElement("div");
@@ -736,7 +737,7 @@ function renderSummary(container, activePlayers) {
           const data = getPlayerMatchData(player.id);
           const starCells = course.holes
             .map((hole) => {
-              const stars = "*".repeat(strokeMarksForHole(data.playingHandicap, hole.strokeIndex));
+              const stars = "*".repeat(strokesReceivedForHole(data.playingHandicap, hole, course));
               return `<span class="scorecard-cell">${stars || "-"}</span>`;
             })
             .join("");
@@ -806,36 +807,39 @@ function closeSummaryModal() {
   summaryModal.setAttribute("aria-hidden", "true");
 }
 
+function escapeCsvCell(value) {
+  const text = String(value ?? "");
+  const escaped = text.replaceAll('"', '""');
+  return `"${escaped}"`;
+}
+
 function downloadResults(activePlayers) {
   const course = getSelectedCourse();
-  const lines = [
-    `${activePlayers.map((player) => player.name.split(" ")[0]).join(" vs ")} - ${course.name}`,
-    "",
-  ];
+  const rows = [["Partido", `${activePlayers.map((player) => player.name.split(" ")[0]).join(" vs ")} - ${course.name}`], []];
 
   activePlayers.forEach((player) => {
     const data = getPlayerMatchData(player.id);
-    lines.push(player.name.toUpperCase());
-    lines.push(`Stableford total: ${data.stableford}`);
-    lines.push(`Bruto total: ${data.grossTotal}`);
-    lines.push(
-      `Hoyos: ${course.holes
-        .map((hole) => {
-          const score = data.scores[hole.number] ?? "-";
-          const stb = data.holeStableford[hole.number];
-          const stars = "*".repeat(shotsReceivedForHole(data.playingHandicap, hole.strokeIndex));
-          return `H${hole.number} BRU ${score} STB ${stb == null ? "-" : stb} ${stars}`;
-        })
-        .join(" | ")}`,
-    );
-    lines.push("");
+    rows.push(["Jugador", player.name.toUpperCase()]);
+    rows.push(["Stableford total", data.stableford]);
+    rows.push(["Bruto total", data.grossTotal]);
+    rows.push(["Hoyo", "Par", "HCP", "Golpes recibidos", "Bruto", "Stableford"]);
+
+    course.holes.forEach((hole) => {
+      const score = data.scores[hole.number] ?? "-";
+      const stb = data.holeStableford[hole.number];
+      const shotsReceived = strokesReceivedForHole(data.playingHandicap, hole, course);
+      rows.push([hole.number, hole.par, hole.strokeIndex, shotsReceived, score, stb == null ? "-" : stb]);
+    });
+
+    rows.push([]);
   });
 
-  const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+  const csvContent = rows.map((row) => row.map(escapeCsvCell).join(";")).join("\n");
+  const blob = new Blob([`\uFEFF${csvContent}`], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `${slugify(`${course.name}-resultados`)}.txt`;
+  link.download = `${slugify(`${course.name}-resultados`)}.csv`;
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -916,11 +920,6 @@ function endMatch() {
   render();
 }
 
-function calculateRawCourseHandicap(handicapIndex, course) {
-  const rawValue = (handicapIndex * (course.slope / 113) + (course.courseRating - course.ratingPar)) * course.handicapFactor;
-  return Math.max(0, rawValue);
-}
-
 function roundHalfUp(value) {
   if (!Number.isFinite(value)) {
     return 0;
@@ -928,12 +927,25 @@ function roundHalfUp(value) {
   return Math.floor(value + 0.5);
 }
 
+function roundToSingleDecimal(value) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.round(value * 10) / 10;
+}
+
+function calculateRawCourseHandicap(handicapIndex, course) {
+  const baseHandicapIndex = course?.holesCount === 9 ? roundToSingleDecimal(handicapIndex / 2) : handicapIndex;
+  const rawValue = (baseHandicapIndex * (course.slope / 113) + (course.courseRating - course.ratingPar)) * course.handicapFactor;
+  return Math.max(0, rawValue);
+}
+
 function calculateCourseHandicap(handicapIndex, course) {
   return roundHalfUp(calculateRawCourseHandicap(handicapIndex, course));
 }
 
 function calculatePlayingHandicap(handicapIndex, course) {
-  return calculateCourseHandicap(handicapIndex, course);
+  return roundHalfUp(calculateRawCourseHandicap(handicapIndex, course) * INDIVIDUAL_STABLEFORD_ALLOWANCE);
 }
 
 function getPlayerMatchData(playerId) {
@@ -957,7 +969,7 @@ function getPlayerMatchData(playerId) {
     if (gross === "-") {
       return sum;
     }
-    const net = gross - shotsReceivedForHole(playingHandicap, hole.strokeIndex);
+    const net = gross - strokesReceivedForHole(playingHandicap, hole, course);
     return sum + Math.max(0, 2 + hole.par - net);
   }, 0);
   const holeStableford = Object.fromEntries(
@@ -969,7 +981,7 @@ function getPlayerMatchData(playerId) {
       if (gross === "-") {
         return [hole.number, 0];
       }
-      const net = gross - shotsReceivedForHole(playingHandicap, hole.strokeIndex);
+      const net = gross - strokesReceivedForHole(playingHandicap, hole, course);
       return [hole.number, Math.max(0, 2 + hole.par - net)];
     }),
   );
@@ -985,20 +997,29 @@ function getPlayerMatchData(playerId) {
   };
 }
 
-function shotsReceivedForHole(playingHandicap, strokeIndex) {
-  if (playingHandicap <= 0) {
-    return 0;
+function getStrokeRankForHole(course, holeNumber) {
+  if (!course || !Array.isArray(course.holes) || course.holes.length === 0) {
+    return null;
   }
-  return Math.floor((playingHandicap - strokeIndex + 18) / 18);
+
+  if (!(course.strokeRankByHole instanceof Map) || course.strokeRankByHole.size !== course.holes.length) {
+    const orderedHoles = [...course.holes].sort((left, right) => left.strokeIndex - right.strokeIndex || left.number - right.number);
+    course.strokeRankByHole = new Map(orderedHoles.map((entry, index) => [entry.number, index + 1]));
+  }
+
+  return course.strokeRankByHole.get(holeNumber) ?? null;
 }
 
-function strokeMarksForHole(playingHandicap, strokeIndex) {
-  if (playingHandicap <= 0) {
+function strokesReceivedForHole(playingHandicap, hole, course) {
+  if (playingHandicap <= 0 || !hole) {
     return 0;
   }
-  const baseStrokes = Math.floor(playingHandicap / 18);
-  const remainder = playingHandicap % 18;
-  return baseStrokes + (remainder > 0 && strokeIndex <= remainder ? 1 : 0);
+
+  const holeCount = course?.holes?.length || 18;
+  const strokeRank = getStrokeRankForHole(course, hole.number) ?? hole.strokeIndex;
+  const baseStrokes = Math.floor(playingHandicap / holeCount);
+  const remainder = playingHandicap % holeCount;
+  return baseStrokes + (remainder > 0 && strokeRank <= remainder ? 1 : 0);
 }
 
 function openScoreModal(playerId) {
