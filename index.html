@@ -65,14 +65,6 @@
 
     <template id="setup-template">
       <section class="setup-screen">
-        <div class="panel account-panel">
-          <div class="panel-title">
-            <span>Cuenta</span>
-            <button id="sign-out-button" class="compact-button" type="button">Salir</button>
-          </div>
-          <p id="current-user-email" class="helper-text"></p>
-        </div>
-
         <div class="panel players-panel">
           <div class="panel-title"><span>Jugadores</span></div>
           <div id="players-list" class="players-list"></div>
@@ -139,15 +131,20 @@
 
     <template id="history-template">
       <section class="setup-screen">
+        <div class="panel account-panel">
+          <div class="panel-title">
+            <span>Cuenta</span>
+            <button id="sign-out-button" class="compact-button" type="button">Salir</button>
+          </div>
+          <p id="current-user-email" class="helper-text"></p>
+        </div>
+
         <div class="panel history-panel">
           <div class="panel-title">
             <span>Historial de partidas</span>
             <span class="panel-chip">Firebase</span>
           </div>
           <div id="history-list" class="history-list"></div>
-        </div>
-        <div class="setup-dock">
-          <button id="close-history" class="secondary-action" type="button">Volver</button>
         </div>
       </section>
     </template>

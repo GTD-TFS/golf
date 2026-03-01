@@ -425,6 +425,12 @@ headerHistoryButton?.addEventListener("click", () => {
     render();
     return;
   }
+  if (state.view === "history") {
+    state.view = "setup";
+    persistState();
+    render();
+    return;
+  }
   void openHistoryView();
 });
 void bootstrapApp();
@@ -565,11 +571,16 @@ function createLocalMatchStore() {
     async getMatch(matchId) {
       return loadLocalMatchHistory().find((entry) => entry.id === matchId) ?? null;
     },
+    async deleteMatch(matchId) {
+      const history = loadLocalMatchHistory().filter((entry) => entry.id !== matchId);
+      saveLocalMatchHistory(history);
+      return true;
+    },
   };
 }
 
 function createFirebaseMatchStore(db, firestoreModule, ownerUid) {
-  const { addDoc, collection, doc, getDoc, getDocs, query, setDoc, where } = firestoreModule;
+  const { addDoc, collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, where } = firestoreModule;
   const matchesCollection = collection(db, "matches");
 
   return {
@@ -595,6 +606,10 @@ function createFirebaseMatchStore(db, firestoreModule, ownerUid) {
         return null;
       }
       return normalizeStoredMatch({ id: snapshot.id, ...snapshot.data() });
+    },
+    async deleteMatch(matchId) {
+      await deleteDoc(doc(db, "matches", matchId));
+      return true;
     },
   };
 }
@@ -669,6 +684,18 @@ async function updateMatchRecord(record) {
   }
   await localMatchStore.updateMatch(record);
   return record;
+}
+
+async function deleteMatchRecord(matchId) {
+  if (firebaseMatchStore) {
+    try {
+      await firebaseMatchStore.deleteMatch(matchId);
+    } catch (error) {
+      console.warn("No se pudo borrar en Firebase; se borra en local.", error);
+    }
+  }
+  await localMatchStore.deleteMatch(matchId);
+  return true;
 }
 
 async function refreshMatchHistory() {
@@ -774,25 +801,23 @@ function renderSetup() {
   const fragment = template.content.cloneNode(true);
   app.appendChild(fragment);
 
-  const currentUserEmail = document.querySelector("#current-user-email");
   const playersList = document.querySelector("#players-list");
   const courseSelect = document.querySelector("#course-select");
   const startButton = document.querySelector("#start-match");
   const addPlayerButton = document.querySelector("#add-player");
-  const signOutButton = document.querySelector("#sign-out-button");
-
-  currentUserEmail.textContent = state.currentUser?.email || "Sesión iniciada";
 
   players.forEach((player) => {
     const row = document.createElement("div");
     row.className = "player-row";
     const federationUi = getPlayerFederationUi(player);
     row.innerHTML = `
-      <input class="player-check" type="checkbox" data-player-id="${player.id}" ${player.selected ? "checked" : ""} />
+      <div class="player-select-line">
+        <input class="player-check" type="checkbox" data-player-id="${player.id}" ${player.selected ? "checked" : ""} />
+        <p class="player-name">${player.name.toUpperCase()}</p>
+      </div>
       <div class="player-block">
         <div class="player-topline">
           <div class="player-main">
-            <p class="player-name">${player.name.toUpperCase()}</p>
             <p class="player-meta">Licencia ${player.license || "Sin licencia"}</p>
           </div>
           ${player.removable ? `<button class="player-delete" type="button" data-remove-player="${player.id}" aria-label="Eliminar jugador">×</button>` : ""}
@@ -881,12 +906,6 @@ function renderSetup() {
   });
 
   addPlayerButton.addEventListener("click", addPlayer);
-  signOutButton.addEventListener("click", async () => {
-    if (!firebaseServices?.auth || !firebaseServices?.authModule) {
-      return;
-    }
-    await firebaseServices.authModule.signOut(firebaseServices.auth);
-  });
 
   startButton.addEventListener("click", async () => {
     startButton.disabled = true;
@@ -907,8 +926,11 @@ function renderHistory() {
   const fragment = template.content.cloneNode(true);
   app.appendChild(fragment);
 
+  const currentUserEmail = document.querySelector("#current-user-email");
+  const signOutButton = document.querySelector("#sign-out-button");
   const historyList = document.querySelector("#history-list");
-  const closeHistoryButton = document.querySelector("#close-history");
+
+  currentUserEmail.textContent = state.currentUser?.email || "Sesión iniciada";
 
   if (state.matchHistory.length === 0) {
     historyList.innerHTML = '<p class="helper-text">Todavía no hay partidas guardadas.</p>';
@@ -938,10 +960,11 @@ function renderHistory() {
     void openStoredMatchSummary(trigger.dataset.openMatch);
   });
 
-  closeHistoryButton.addEventListener("click", () => {
-    state.view = "setup";
-    persistState();
-    render();
+  signOutButton.addEventListener("click", async () => {
+    if (!firebaseServices?.auth || !firebaseServices?.authModule) {
+      return;
+    }
+    await firebaseServices.authModule.signOut(firebaseServices.auth);
   });
 }
 
@@ -1001,6 +1024,22 @@ function renderGame() {
     const holeScore = playerState.scores[hole.number] ?? null;
     const shotsOnHole = strokesReceivedForHole(playerState.playingHandicap, hole, course);
     const holeStableford = playerState.holeStableford[hole.number];
+    const scoreButtons = Array.from({ length: 10 }, (_, index) => {
+      const buttonValue = index + 1;
+      const isTenPlus = buttonValue === 10;
+      const selected =
+        isTenPlus ? typeof holeScore === "number" && holeScore >= 10 : holeScore === buttonValue;
+      return `
+        <button
+          class="inline-score-button ${selected ? "selected" : ""}"
+          type="button"
+          data-inline-score-player="${player.id}"
+          data-inline-score-value="${isTenPlus ? "10+" : buttonValue}"
+        >
+          ${isTenPlus ? "10+" : buttonValue}
+        </button>
+      `;
+    }).join("");
 
     const row = document.createElement("div");
     row.className = "score-row";
@@ -1024,21 +1063,19 @@ function renderGame() {
             <span>Bruto</span>
             <strong>${holeScore === null ? "-" : holeScore}</strong>
           </div>
-          <button class="score-entry" type="button" data-score-player="${player.id}">
-            ${holeScore === null ? "+" : holeScore}
-          </button>
         </div>
+        <div class="inline-score-grid">${scoreButtons}</div>
       </div>
     `;
     scoreboard.appendChild(row);
   });
 
-  scoreboard.addEventListener("click", (event) => {
-    const trigger = event.target.closest("[data-score-player]");
+  scoreboard.addEventListener("click", async (event) => {
+    const trigger = event.target.closest("[data-inline-score-player]");
     if (!trigger) {
       return;
     }
-    openScoreModal(trigger.dataset.scorePlayer);
+    await applyInlineScore(trigger.dataset.inlineScorePlayer, trigger.dataset.inlineScoreValue);
   });
 
   document.querySelector("#show-summary").addEventListener("click", () => {
@@ -1158,6 +1195,12 @@ function getPlayerMatchDataFromRecord(matchRecord, playerId, course = getMatchCo
 function renderSummary(container, activePlayers, options = {}) {
   const matchRecord = options.matchRecord ?? buildMatchSnapshot();
   const course = getMatchCourse(matchRecord);
+  const actions = [
+    '<button class="primary-action summary-download" type="button" data-download-summary>Descargar resultados</button>',
+  ];
+  if (options.matchRecord?.id) {
+    actions.push('<button class="danger-action summary-delete" type="button" data-delete-match>Eliminar partido</button>');
+  }
   const ranking = activePlayers
     .map((player) => {
       const data = getPlayerMatchDataFromRecord(matchRecord, player.id, course);
@@ -1246,7 +1289,7 @@ function renderSummary(container, activePlayers, options = {}) {
         })
         .join("")}
     </div>
-    <button class="primary-action summary-download" type="button" data-download-summary>Descargar resultados</button>
+    <div class="summary-actions">${actions.join("")}</div>
   `;
 }
 
@@ -1255,6 +1298,22 @@ function openSummaryModal(activePlayers, options = {}) {
   renderSummary(summaryModalContent, activePlayers, options);
   summaryModalContent.querySelector("[data-download-summary]")?.addEventListener("click", () => {
     downloadResults(activePlayers, options);
+  });
+  summaryModalContent.querySelector("[data-delete-match]")?.addEventListener("click", async () => {
+    const matchId = options.matchRecord?.id;
+    if (!matchId) {
+      return;
+    }
+    const confirmed = window.confirm("¿Eliminar este partido del historial?");
+    if (!confirmed) {
+      return;
+    }
+    await deleteMatchRecord(matchId);
+    await refreshMatchHistory();
+    closeSummaryModal();
+    if (state.view === "history") {
+      render();
+    }
   });
   summaryModal.classList.remove("hidden");
   summaryModal.setAttribute("aria-hidden", "false");
@@ -1331,16 +1390,11 @@ async function startMatch() {
     }),
   );
   state.currentHole = 0;
-  const createdMatch = await createMatchRecord({
-    ...buildMatchSnapshot(),
-    id: `match-${Date.now()}`,
-  });
-  state.activeMatchId = createdMatch.id;
-  state.activeMatchCreatedAt = createdMatch.createdAt;
+  state.activeMatchId = `match-${Date.now()}`;
+  state.activeMatchCreatedAt = new Date().toISOString();
   state.view = "game";
   state.gps.enabled = false;
   state.gps.distanceMeters = null;
-  await refreshMatchHistory();
   persistState();
   render();
 
@@ -1397,8 +1451,34 @@ async function saveActiveMatchProgress(status = "in_progress") {
   const snapshot = buildMatchSnapshot(status);
   snapshot.id = state.activeMatchId;
   snapshot.createdAt = state.activeMatchCreatedAt ?? snapshot.createdAt;
-  await updateMatchRecord(snapshot);
+  const alreadyPersisted = state.matchHistory.some((entry) => entry.id === snapshot.id);
+
+  if (!matchHasRecordedScores(snapshot)) {
+    if (alreadyPersisted) {
+      await deleteMatchRecord(snapshot.id);
+      await refreshMatchHistory();
+      if (status === "completed") {
+        state.activeMatchId = null;
+        state.activeMatchCreatedAt = null;
+      }
+    }
+    return;
+  }
+
+  if (alreadyPersisted) {
+    await updateMatchRecord(snapshot);
+  } else {
+    const createdMatch = await createMatchRecord(snapshot);
+    state.activeMatchId = createdMatch.id;
+    state.activeMatchCreatedAt = createdMatch.createdAt;
+  }
   await refreshMatchHistory();
+}
+
+function matchHasRecordedScores(matchRecord) {
+  return Object.values(matchRecord?.scores ?? {}).some((playerScore) =>
+    Object.keys(playerScore?.scores ?? {}).length > 0,
+  );
 }
 
 async function openStoredMatchSummary(matchId) {
@@ -1510,6 +1590,48 @@ function strokesReceivedForHole(playingHandicap, hole, course) {
   const baseStrokes = Math.floor(playingHandicap / holeCount);
   const remainder = playingHandicap % holeCount;
   return baseStrokes + (remainder > 0 && strokeRank <= remainder ? 1 : 0);
+}
+
+async function applyInlineScore(playerId, rawValue) {
+  const course = getSelectedCourse();
+  const holeNumber = course.holes[state.currentHole].number;
+  const match = state.scores[playerId];
+  if (!match) {
+    return;
+  }
+
+  const currentValue = match.scores[holeNumber];
+
+  if (rawValue === "10+") {
+    if (typeof currentValue === "number" && currentValue >= 10) {
+      delete match.scores[holeNumber];
+    } else {
+      const customValue = window.prompt("Introduce los golpes (10 o más):", "10");
+      if (customValue == null) {
+        return;
+      }
+      const numericValue = Number(customValue);
+      if (!Number.isFinite(numericValue) || numericValue < 10) {
+        alert("Introduce un número válido de 10 o más.");
+        return;
+      }
+      match.scores[holeNumber] = Math.floor(numericValue);
+    }
+  } else {
+    const numericValue = Number(rawValue);
+    if (!Number.isFinite(numericValue)) {
+      return;
+    }
+    if (currentValue === numericValue) {
+      delete match.scores[holeNumber];
+    } else {
+      match.scores[holeNumber] = numericValue;
+    }
+  }
+
+  await saveActiveMatchProgress();
+  persistState();
+  render();
 }
 
 function openScoreModal(playerId) {
