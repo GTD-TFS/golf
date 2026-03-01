@@ -219,7 +219,7 @@ const verifiedCourseConfigs = {
     sourceLabel: "Tabla oficial verificada + greens exactos fijados",
     sourceUrl: "https://www.golfdelsur.es/el-campo/",
     tee: "Amarillas",
-    slope: 129,
+    slope: 130,
     courseRating: 71.7,
     holes: [
       [1, 4, 3, 329, 28.0379849617, -16.61083393],
@@ -332,8 +332,8 @@ const verifiedCourseConfigs = {
     sourceLabel: "Scorecard público estructurado verificado",
     sourceUrl: "https://www.golfify.io/courses/real-club-de-golf-de-tenerife",
     tee: "Amarillas",
-    slope: 130,
-    courseRating: 69.6,
+    slope: 137,
+    courseRating: 70.1,
     holes: [
       [1, 4, 4, 348],
       [2, 3, 6, 194],
