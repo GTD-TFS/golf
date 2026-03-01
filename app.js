@@ -734,12 +734,6 @@ function renderSummary(container, activePlayers) {
       ${activePlayers
         .map((player) => {
           const data = getPlayerMatchData(player.id);
-          const starCells = course.holes
-            .map((hole) => {
-              const stars = "*".repeat(shotsReceivedForHole(data.courseHandicap, hole.strokeIndex));
-              return `<span class="scorecard-cell">${stars || "-"}</span>`;
-            })
-            .join("");
           const grossCells = course.holes
             .map((hole) => `<span class="scorecard-cell">${data.scores[hole.number] ?? "-"}</span>`)
             .join("");
@@ -768,10 +762,6 @@ function renderSummary(container, activePlayers) {
                 <div class="scorecard-row">
                   <span class="scorecard-label">HCP</span>
                   ${hcpCells}
-                </div>
-                <div class="scorecard-row">
-                  <span class="scorecard-label">*</span>
-                  ${starCells}
                 </div>
                 <div class="scorecard-row">
                   <span class="scorecard-label">BRU</span>
