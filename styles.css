@@ -69,10 +69,22 @@ body[data-view="game"] .hero {
 
 .hero h1 {
   margin: 0;
-  font-size: clamp(1.2rem, 3.8vw, 1.6rem);
+  display: grid;
+  justify-items: center;
+  gap: 1px;
   line-height: 1;
   color: #fff;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  text-shadow: 0 5px 16px rgba(0, 0, 0, 0.34);
+}
+
+.hero h1 span:first-child {
+  font-size: clamp(1.05rem, 3.2vw, 1.35rem);
+  font-weight: 800;
+}
+
+.hero h1 span:last-child {
+  font-size: clamp(1.3rem, 4.4vw, 1.75rem);
+  font-weight: 800;
 }
 
 .menu-button {
@@ -473,7 +485,7 @@ button:disabled {
   font-size: clamp(2.8rem, 8vw, 4rem);
   line-height: 0.88;
   color: #fff;
-  text-shadow: 0 4px 16px rgba(0, 0, 0, 0.34);
+  text-shadow: 0 6px 18px rgba(0, 0, 0, 0.38);
 }
 
 .distance-inline {
@@ -512,8 +524,8 @@ button:disabled {
   margin-top: 2px;
   font-size: clamp(1.8rem, 5vw, 2.6rem);
   line-height: 0.9;
-  color: #fff;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+  color: var(--ink);
+  text-shadow: 0 2px 10px rgba(255, 255, 255, 0.2);
 }
 
 .hole-meta-inline {
@@ -858,6 +870,24 @@ button:disabled {
 
 .scorecard-cell-alt {
   background: #f4f8fb;
+}
+
+.scorecard-row-plain {
+  gap: 2px;
+}
+
+.scorecard-plain-label,
+.scorecard-plain-cell {
+  min-height: 18px;
+  padding: 1px 4px 0;
+  text-align: center;
+  font-size: 0.56rem;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.scorecard-plain-label {
+  color: var(--muted);
 }
 
 .scorecard-cell.stb-0 {

@@ -1239,8 +1239,8 @@ function renderSummary(container, activePlayers, options = {}) {
           return `
             <section class="final-player">
               <h3>${player.name.toUpperCase()}</h3>
-              ${renderScorecardSection("Ida", firstHalfHoles, data)}
-              ${secondHalfHoles.length ? renderScorecardSection("Vuelta", secondHalfHoles, data) : ""}
+              ${renderScorecardSection("Ida", firstHalfHoles, data, course)}
+              ${secondHalfHoles.length ? renderScorecardSection("Vuelta", secondHalfHoles, data, course) : ""}
             </section>
           `;
         })
@@ -1250,7 +1250,7 @@ function renderSummary(container, activePlayers, options = {}) {
   `;
 }
 
-function renderScorecardSection(title, holes, data) {
+function renderScorecardSection(title, holes, data, course) {
   if (!holes.length) {
     return "";
   }
@@ -1269,6 +1269,13 @@ function renderScorecardSection(title, holes, data) {
       return `<span class="scorecard-cell ${altClass} ${colorClass}">${points == null ? "-" : points}</span>`;
     })
     .join("");
+  const shotCells = holes
+    .map((hole, index) => {
+      const shots = strokesReceivedForHole(data.playingHandicap, hole, course);
+      const altClass = index % 2 === 0 ? "scorecard-cell-alt" : "";
+      return `<span class="scorecard-plain-cell ${altClass}">${shots > 0 ? "*".repeat(shots) : ""}</span>`;
+    })
+    .join("");
 
   return `
     <div class="scorecard-section">
@@ -1285,6 +1292,10 @@ function renderScorecardSection(title, holes, data) {
         <div class="scorecard-row">
           <span class="scorecard-label">STB</span>
           ${stbCells}
+        </div>
+        <div class="scorecard-row scorecard-row-plain">
+          <span class="scorecard-plain-label">*</span>
+          ${shotCells}
         </div>
       </div>
     </div>
