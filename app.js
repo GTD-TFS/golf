@@ -734,6 +734,12 @@ function renderSummary(container, activePlayers) {
       ${activePlayers
         .map((player) => {
           const data = getPlayerMatchData(player.id);
+          const starCells = course.holes
+            .map((hole) => {
+              const stars = "*".repeat(shotsReceivedForHole(data.courseHandicap, hole.strokeIndex));
+              return `<span class="scorecard-cell">${stars || "-"}</span>`;
+            })
+            .join("");
           const grossCells = course.holes
             .map((hole) => `<span class="scorecard-cell">${data.scores[hole.number] ?? "-"}</span>`)
             .join("");
@@ -764,6 +770,10 @@ function renderSummary(container, activePlayers) {
                   ${hcpCells}
                 </div>
                 <div class="scorecard-row">
+                  <span class="scorecard-label">*</span>
+                  ${starCells}
+                </div>
+                <div class="scorecard-row">
                   <span class="scorecard-label">BRU</span>
                   ${grossCells}
                 </div>
@@ -777,12 +787,16 @@ function renderSummary(container, activePlayers) {
         })
         .join("")}
     </div>
+    <button class="primary-action summary-download" type="button" data-download-summary>Descargar resultados</button>
   `;
 }
 
 function openSummaryModal(activePlayers) {
   summaryModalContent.innerHTML = "";
   renderSummary(summaryModalContent, activePlayers);
+  summaryModalContent.querySelector("[data-download-summary]")?.addEventListener("click", () => {
+    downloadResults(activePlayers);
+  });
   summaryModal.classList.remove("hidden");
   summaryModal.setAttribute("aria-hidden", "false");
 }
@@ -790,6 +804,42 @@ function openSummaryModal(activePlayers) {
 function closeSummaryModal() {
   summaryModal.classList.add("hidden");
   summaryModal.setAttribute("aria-hidden", "true");
+}
+
+function downloadResults(activePlayers) {
+  const course = getSelectedCourse();
+  const lines = [
+    `${activePlayers.map((player) => player.name.split(" ")[0]).join(" vs ")} - ${course.name}`,
+    "",
+  ];
+
+  activePlayers.forEach((player) => {
+    const data = getPlayerMatchData(player.id);
+    lines.push(player.name.toUpperCase());
+    lines.push(`Stableford total: ${data.stableford}`);
+    lines.push(`Bruto total: ${data.grossTotal}`);
+    lines.push(
+      `Hoyos: ${course.holes
+        .map((hole) => {
+          const score = data.scores[hole.number] ?? "-";
+          const stb = data.holeStableford[hole.number];
+          const stars = "*".repeat(shotsReceivedForHole(data.courseHandicap, hole.strokeIndex));
+          return `H${hole.number} BRU ${score} STB ${stb == null ? "-" : stb} ${stars}`;
+        })
+        .join(" | ")}`,
+    );
+    lines.push("");
+  });
+
+  const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${slugify(`${course.name}-resultados`)}.txt`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 async function startMatch() {
