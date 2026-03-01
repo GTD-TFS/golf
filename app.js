@@ -1007,7 +1007,7 @@ function renderGame() {
   const gpsToggle = document.querySelector("#gps-toggle");
   updateGpsDistance(hole);
 
-  document.querySelector("#current-hole-number").textContent = hole.number;
+  document.querySelector("#current-hole-number").textContent = `Hoyo ${hole.number}`;
   document.querySelector("#current-hole-par").textContent = hole.par;
   document.querySelector("#current-hole-hcp").textContent = hole.strokeIndex;
   document.querySelector("#current-hole-yardage").textContent = state.gps.enabled ? formatGpsDistance(hole) : "";
@@ -1209,6 +1209,9 @@ function renderSummary(container, activePlayers, options = {}) {
     })
     .sort((left, right) => right.stableford - left.stableford || left.gross - right.gross);
 
+  const firstHalfHoles = course.holes.slice(0, 9);
+  const secondHalfHoles = course.holes.slice(9);
+
   container.innerHTML = `
     <div class="panel-title">
       <span>Clasificación general</span>
@@ -1233,59 +1236,58 @@ function renderSummary(container, activePlayers, options = {}) {
       ${activePlayers
         .map((player) => {
           const data = getPlayerMatchDataFromRecord(matchRecord, player.id, course);
-          const starCells = course.holes
-            .map((hole) => {
-              const stars = "*".repeat(strokesReceivedForHole(data.playingHandicap, hole, course));
-              return `<span class="scorecard-cell">${stars || "-"}</span>`;
-            })
-            .join("");
-          const grossCells = course.holes
-            .map((hole) => `<span class="scorecard-cell">${data.scores[hole.number] ?? "-"}</span>`)
-            .join("");
-          const parCells = course.holes.map((hole) => `<span class="scorecard-cell">${hole.par}</span>`).join("");
-          const hcpCells = course.holes.map((hole) => `<span class="scorecard-cell">${hole.strokeIndex}</span>`).join("");
-          const stbCells = course.holes
-            .map((hole) => {
-              const points = data.holeStableford[hole.number];
-              const colorClass = getStablefordCellClass(points);
-              return `<span class="scorecard-cell ${colorClass}">${points == null ? "-" : points}</span>`;
-            })
-            .join("");
           return `
             <section class="final-player">
               <h3>${player.name.toUpperCase()}</h3>
-              <div class="scorecard-grid">
-                <div class="scorecard-row">
-                  <span class="scorecard-label">H</span>
-                  ${course.holes.map((hole) => `<span class="scorecard-cell">H${hole.number}</span>`).join("")}
-                </div>
-                <div class="scorecard-row">
-                  <span class="scorecard-label">PAR</span>
-                  ${parCells}
-                </div>
-                <div class="scorecard-row">
-                  <span class="scorecard-label">HCP</span>
-                  ${hcpCells}
-                </div>
-                <div class="scorecard-row">
-                  <span class="scorecard-label">*</span>
-                  ${starCells}
-                </div>
-                <div class="scorecard-row">
-                  <span class="scorecard-label">BRU</span>
-                  ${grossCells}
-                </div>
-                <div class="scorecard-row">
-                  <span class="scorecard-label">STB</span>
-                  ${stbCells}
-                </div>
-              </div>
+              ${renderScorecardSection("Ida", firstHalfHoles, data)}
+              ${secondHalfHoles.length ? renderScorecardSection("Vuelta", secondHalfHoles, data) : ""}
             </section>
           `;
         })
         .join("")}
     </div>
     <div class="summary-actions">${actions.join("")}</div>
+  `;
+}
+
+function renderScorecardSection(title, holes, data) {
+  if (!holes.length) {
+    return "";
+  }
+
+  const holeCells = holes
+    .map((hole, index) => `<span class="scorecard-cell ${index % 2 === 0 ? "scorecard-cell-alt" : ""}">H${hole.number}</span>`)
+    .join("");
+  const grossCells = holes
+    .map((hole, index) => `<span class="scorecard-cell ${index % 2 === 0 ? "scorecard-cell-alt" : ""}">${data.scores[hole.number] ?? "-"}</span>`)
+    .join("");
+  const stbCells = holes
+    .map((hole, index) => {
+      const points = data.holeStableford[hole.number];
+      const colorClass = getStablefordCellClass(points);
+      const altClass = index % 2 === 0 ? "scorecard-cell-alt" : "";
+      return `<span class="scorecard-cell ${altClass} ${colorClass}">${points == null ? "-" : points}</span>`;
+    })
+    .join("");
+
+  return `
+    <div class="scorecard-section">
+      <p class="scorecard-section-title">${title}</p>
+      <div class="scorecard-grid">
+        <div class="scorecard-row">
+          <span class="scorecard-label">${title}</span>
+          ${holeCells}
+        </div>
+        <div class="scorecard-row">
+          <span class="scorecard-label">BRU</span>
+          ${grossCells}
+        </div>
+        <div class="scorecard-row">
+          <span class="scorecard-label">STB</span>
+          ${stbCells}
+        </div>
+      </div>
+    </div>
   `;
 }
 
