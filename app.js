@@ -968,7 +968,7 @@ function shotsReceivedForHole(playingHandicap, strokeIndex) {
   if (playingHandicap <= 0) {
     return 0;
   }
-  return Math.floor((playingHandicap - strokeIndex + 17) / 18);
+  return Math.floor((playingHandicap - strokeIndex + 18) / 18);
 }
 
 function openScoreModal(playerId) {
