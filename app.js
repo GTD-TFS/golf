@@ -737,10 +737,14 @@ function renderSummary(container, activePlayers) {
           const grossCells = course.holes
             .map((hole) => `<span class="scorecard-cell">${data.scores[hole.number] ?? "-"}</span>`)
             .join("");
+          const parCells = course.holes.map((hole) => `<span class="scorecard-cell">${hole.par}</span>`).join("");
+          const hcpCells = course.holes.map((hole) => `<span class="scorecard-cell">${hole.strokeIndex}</span>`).join("");
           const stbCells = course.holes
             .map((hole) => {
               const points = data.holeStableford[hole.number];
-              return `<span class="scorecard-cell">${points == null ? "-" : points}</span>`;
+              const colorClass =
+                points == null ? "" : points <= 0 ? "stb-low" : points === 1 ? "stb-mid" : points <= 3 ? "stb-good" : "stb-hot";
+              return `<span class="scorecard-cell ${colorClass}">${points == null ? "-" : points}</span>`;
             })
             .join("");
           return `
@@ -750,6 +754,14 @@ function renderSummary(container, activePlayers) {
                 <div class="scorecard-row">
                   <span class="scorecard-label">H</span>
                   ${course.holes.map((hole) => `<span class="scorecard-cell">H${hole.number}</span>`).join("")}
+                </div>
+                <div class="scorecard-row">
+                  <span class="scorecard-label">PAR</span>
+                  ${parCells}
+                </div>
+                <div class="scorecard-row">
+                  <span class="scorecard-label">HCP</span>
+                  ${hcpCells}
                 </div>
                 <div class="scorecard-row">
                   <span class="scorecard-label">BRU</span>
