@@ -74,7 +74,6 @@
         <div class="panel course-panel">
           <div class="panel-title"><span>Campo</span></div>
           <label class="field">
-            <span class="field-label">Selecciona campo</span>
             <select id="course-select"></select>
           </label>
         </div>
@@ -131,20 +130,22 @@
 
     <template id="history-template">
       <section class="setup-screen">
-        <div class="panel account-panel">
-          <div class="panel-title">
-            <span>Cuenta</span>
-            <button id="sign-out-button" class="compact-button" type="button">Salir</button>
-          </div>
-          <p id="current-user-email" class="helper-text"></p>
-        </div>
-
         <div class="panel history-panel">
           <div class="panel-title">
             <span>Historial de partidas</span>
             <span class="panel-chip">Firebase</span>
           </div>
           <div id="history-list" class="history-list"></div>
+        </div>
+
+        <div class="setup-dock history-dock">
+          <div class="history-account-bar">
+            <div class="history-account-copy">
+              <span class="history-account-label">Cuenta</span>
+              <strong id="current-user-email"></strong>
+            </div>
+            <button id="sign-out-button" class="compact-button" type="button">Salir</button>
+          </div>
         </div>
       </section>
     </template>

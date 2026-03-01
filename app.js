@@ -813,15 +813,11 @@ function renderSetup() {
     row.innerHTML = `
       <div class="player-select-line">
         <input class="player-check" type="checkbox" data-player-id="${player.id}" ${player.selected ? "checked" : ""} />
-        <p class="player-name">${player.name.toUpperCase()}</p>
+        <p class="player-name">${player.name}</p>
+        ${player.removable ? `<button class="player-delete" type="button" data-remove-player="${player.id}" aria-label="Eliminar jugador">×</button>` : ""}
       </div>
       <div class="player-block">
-        <div class="player-topline">
-          <div class="player-main">
-            <p class="player-meta">Licencia ${player.license || "Sin licencia"}</p>
-          </div>
-          ${player.removable ? `<button class="player-delete" type="button" data-remove-player="${player.id}" aria-label="Eliminar jugador">×</button>` : ""}
-        </div>
+        <p class="player-meta">Lic. ${player.license || "Sin licencia"}</p>
         <div class="player-controls">
           <input
             type="number"
@@ -930,7 +926,7 @@ function renderHistory() {
   const signOutButton = document.querySelector("#sign-out-button");
   const historyList = document.querySelector("#history-list");
 
-  currentUserEmail.textContent = state.currentUser?.email || "Sesión iniciada";
+  currentUserEmail.textContent = state.currentUser?.email || "Sesion iniciada";
 
   if (state.matchHistory.length === 0) {
     historyList.innerHTML = '<p class="helper-text">Todavía no hay partidas guardadas.</p>';
