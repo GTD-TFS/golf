@@ -933,7 +933,7 @@ function calculateCourseHandicap(handicapIndex, course) {
 }
 
 function calculatePlayingHandicap(handicapIndex, course) {
-  return roundHalfUp(calculateRawCourseHandicap(handicapIndex, course) * 0.95);
+  return calculateCourseHandicap(handicapIndex, course);
 }
 
 function getPlayerMatchData(playerId) {
