@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Revision de Hoyos</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <style>
+      :root {
+        --bg: #e9f5ff;
+        --panel: rgba(255, 255, 255, 0.96);
+        --line: rgba(17, 63, 97, 0.12);
+        --ink: #163149;
+        --muted: #65839b;
+        --accent: #1177b9;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        color: var(--ink);
+        background: linear-gradient(180deg, #dff1ff, #eef8ff);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        padding: 16px;
+        border-right: 1px solid var(--line);
+        background: var(--panel);
+        overflow-y: auto;
+      }
+
+      .sidebar h1 {
+        margin: 0 0 6px;
+        font-size: 1.15rem;
+      }
+
+      .sidebar p {
+        margin: 0 0 14px;
+        color: var(--muted);
+        font-size: 0.9rem;
+        line-height: 1.4;
+      }
+
+      .toolbar {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      .toolbar button {
+        flex: 1;
+        min-height: 36px;
+        border: 0;
+        border-radius: 10px;
+        font-weight: 700;
+        cursor: pointer;
+        background: #dff1ff;
+        color: var(--accent);
+      }
+
+      .course-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .course-item {
+        display: grid;
+        gap: 4px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: #fff;
+      }
+
+      .course-item label {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        font-weight: 700;
+      }
+
+      .course-meta {
+        font-size: 0.78rem;
+        color: var(--muted);
+      }
+
+      .swatch {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+
+      #map {
+        width: 100%;
+        height: 100vh;
+      }
+
+      .leaflet-popup-content {
+        line-height: 1.35;
+      }
+
+      @media (max-width: 900px) {
+        .layout {
+          grid-template-columns: 1fr;
+          grid-template-rows: auto 70vh;
+        }
+
+        .sidebar {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        #map {
+          height: 70vh;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <h1>Mapa de Revision de Hoyos</h1>
+        <p>
+          Este visor usa las coordenadas de green que ya estan cargadas en el proyecto. Puedes activar o desactivar
+          campos para ver si algun hoyo esta fuera de sitio.
+        </p>
+        <div class="toolbar">
+          <button type="button" id="show-all">Mostrar todo</button>
+          <button type="button" id="hide-all">Ocultar todo</button>
+        </div>
+        <div id="course-list" class="course-list"></div>
+      </aside>
+      <main id="map"></main>
+    </div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script>
+      const courses = [{"id":"abama-golf","tee":"Amarillas","holes":[{"number":1,"par":4,"strokeIndex":9,"meters":293,"lat":28.1697954,"lng":-16.7930868},{"number":2,"par":4,"strokeIndex":7,"meters":265,"lat":28.168765,"lng":-16.788432},{"number":3,"par":5,"strokeIndex":11,"meters":502,"lat":28.1697065,"lng":-16.7831909},{"number":4,"par":3,"strokeIndex":5,"meters":182,"lat":28.1708254,"lng":-16.7837752},{"number":5,"par":4,"strokeIndex":13,"meters":300,"lat":28.1722343,"lng":-16.7796052},{"number":6,"par":5,"strokeIndex":15,"meters":423,"lat":28.1716971,"lng":-16.7839469},{"number":7,"par":3,"strokeIndex":17,"meters":130,"lat":28.1726903,"lng":-16.7840225},{"number":8,"par":4,"strokeIndex":1,"meters":387,"lat":28.1724324,"lng":-16.7871051},{"number":9,"par":4,"strokeIndex":3,"meters":390,"lat":28.1710493,"lng":-16.788982},{"number":10,"par":5,"strokeIndex":12,"meters":463,"lat":28.1706238,"lng":-16.7945814},{"number":11,"par":4,"strokeIndex":10,"meters":324,"lat":28.1697855,"lng":-16.798389},{"number":12,"par":3,"strokeIndex":14,"meters":152,"lat":28.1699946,"lng":-16.8013709},{"number":13,"par":4,"strokeIndex":16,"meters":276,"lat":28.1703438,"lng":-16.7971284},{"number":14,"par":3,"strokeIndex":18,"meters":147,"lat":28.169781,"lng":-16.7940232},{"number":15,"par":4,"strokeIndex":4,"meters":349,"lat":28.1693681,"lng":-16.7948227},{"number":16,"par":4,"strokeIndex":6,"meters":349,"lat":28.1667315,"lng":-16.7943821},{"number":17,"par":5,"strokeIndex":8,"meters":452,"lat":28.1673424,"lng":-16.792253},{"number":18,"par":4,"strokeIndex":2,"meters":385,"lat":28.1662549,"lng":-16.7934715}]},{"id":"amarilla-golf","tee":"Amarillos","holes":[{"number":4,"par":5,"strokeIndex":4,"meters":462,"lat":28.02789058381047,"lng":-16.619070502254914},{"number":5,"par":4,"strokeIndex":16,"meters":300,"lat":28.0267713593,"lng":-16.6191970423},{"number":6,"par":3,"strokeIndex":10,"meters":155,"lat":28.022995543778567,"lng":-16.619902939527886},{"number":7,"par":4,"strokeIndex":6,"meters":360,"lat":28.0193220828,"lng":-16.6191904194},{"number":8,"par":3,"strokeIndex":18,"meters":118,"lat":28.0197814349,"lng":-16.6180920599},{"number":9,"par":5,"strokeIndex":12,"meters":478,"lat":28.0232094635,"lng":-16.6184801153},{"number":10,"par":4,"strokeIndex":8,"meters":331,"lat":28.028487700423643,"lng":-16.618153362072956},{"number":11,"par":3,"strokeIndex":14,"meters":100,"lat":28.0277508572,"lng":-16.6145207862},{"number":12,"par":4,"strokeIndex":2,"meters":345,"lat":28.02507961450293,"lng":-16.617426094772952},{"number":13,"par":5,"strokeIndex":11,"meters":450,"lat":28.026011972612697,"lng":-16.61370768829099},{"number":14,"par":4,"strokeIndex":5,"meters":348,"lat":28.02209288009303,"lng":-16.613175745999996},{"number":15,"par":4,"strokeIndex":9,"meters":363,"lat":28.0212814032,"lng":-16.6136657254},{"number":16,"par":4,"strokeIndex":3,"meters":344,"lat":28.024960361693754,"lng":-16.61374264468197},{"number":17,"par":4,"strokeIndex":1,"meters":388,"lat":28.0274814239,"lng":-16.6133823638},{"number":18,"par":3,"strokeIndex":17,"meters":121,"lat":28.029902990015156,"lng":-16.617331051754917},{"number":1,"par":4,"strokeIndex":7,"meters":335,"lat":28.0357940788,"lng":-16.6151307755},{"number":2,"par":3,"strokeIndex":13,"meters":140,"lat":28.0340250643,"lng":-16.6168317722},{"number":3,"par":5,"strokeIndex":15,"meters":450,"lat":28.032136458604647,"lng":-16.618670902754925}]},{"id":"golf-costa-adeje","tee":"59","holes":[{"number":1,"par":5,"strokeIndex":5,"meters":477,"lat":28.1178248,"lng":-16.7505347},{"number":2,"par":3,"strokeIndex":17,"meters":113,"lat":28.1147031,"lng":-16.7491981},{"number":3,"par":5,"strokeIndex":13,"meters":512,"lat":28.1150934,"lng":-16.7529082},{"number":4,"par":4,"strokeIndex":7,"meters":406,"lat":28.1121632,"lng":-16.7557716},{"number":5,"par":3,"strokeIndex":15,"meters":124,"lat":28.1112573,"lng":-16.7596827},{"number":6,"par":4,"strokeIndex":9,"meters":324,"lat":28.110943,"lng":-16.7587481},{"number":7,"par":3,"strokeIndex":3,"meters":147,"lat":28.1145403,"lng":-16.7480525},{"number":8,"par":5,"strokeIndex":11,"meters":482,"lat":28.1134068,"lng":-16.7551673},{"number":9,"par":4,"strokeIndex":1,"meters":372,"lat":28.1099253,"lng":-16.7516826},{"number":10,"par":3,"strokeIndex":4,"meters":198,"lat":28.1115229,"lng":-16.7509271},{"number":11,"par":5,"strokeIndex":12,"meters":461,"lat":28.112695,"lng":-16.7536085},{"number":12,"par":4,"strokeIndex":8,"meters":317,"lat":28.1131937,"lng":-16.7508847},{"number":13,"par":5,"strokeIndex":14,"meters":467,"lat":28.1125926,"lng":-16.749502},{"number":14,"par":3,"strokeIndex":10,"meters":141,"lat":28.1190619,"lng":-16.7503999},{"number":15,"par":4,"strokeIndex":6,"meters":364,"lat":28.1188001,"lng":-16.7489359},{"number":16,"par":3,"strokeIndex":18,"meters":154,"lat":28.1164143,"lng":-16.7474671},{"number":17,"par":4,"strokeIndex":2,"meters":401,"lat":28.1155152,"lng":-16.7474618},{"number":18,"par":5,"strokeIndex":16,"meters":470,"lat":28.1184343,"lng":-16.7496812}]},{"id":"buenavista-golf","tee":"Amarillos","holes":[{"number":1,"par":5,"strokeIndex":7,"meters":472,"lat":28.3708363,"lng":-16.8613043},{"number":2,"par":3,"strokeIndex":17,"meters":122,"lat":28.37177,"lng":-16.8582922},{"number":3,"par":4,"strokeIndex":15,"meters":317,"lat":28.3712322,"lng":-16.8580192},{"number":4,"par":3,"strokeIndex":9,"meters":178,"lat":28.3700395,"lng":-16.8608174},{"number":5,"par":5,"strokeIndex":13,"meters":440,"lat":28.372479,"lng":-16.8623198},{"number":6,"par":4,"strokeIndex":3,"meters":393,"lat":28.3727838,"lng":-16.8589532},{"number":7,"par":4,"strokeIndex":1,"meters":367,"lat":28.3739532,"lng":-16.8597792},{"number":8,"par":3,"strokeIndex":5,"meters":193,"lat":28.3721505,"lng":-16.858458},{"number":9,"par":5,"strokeIndex":11,"meters":441,"lat":28.3750354,"lng":-16.8625962},{"number":10,"par":5,"strokeIndex":18,"meters":468,"lat":28.372639,"lng":-16.8659352},{"number":11,"par":4,"strokeIndex":2,"meters":363,"lat":28.3725091,"lng":-16.8677811},{"number":12,"par":3,"strokeIndex":16,"meters":134,"lat":28.372343,"lng":-16.865108},{"number":13,"par":5,"strokeIndex":12,"meters":444,"lat":28.3749177,"lng":-16.8664432},{"number":14,"par":4,"strokeIndex":10,"meters":325,"lat":28.3740312,"lng":-16.8638303},{"number":15,"par":3,"strokeIndex":8,"meters":185,"lat":28.3731399,"lng":-16.8642446},{"number":16,"par":4,"strokeIndex":6,"meters":304,"lat":28.3727997,"lng":-16.8637387},{"number":17,"par":3,"strokeIndex":4,"meters":165,"lat":28.3747491,"lng":-16.8604599},{"number":18,"par":5,"strokeIndex":14,"meters":436,"lat":28.3712325,"lng":-16.8626502}]},{"id":"golf-del-sur","tee":"Amarillas","holes":[{"number":1,"par":4,"strokeIndex":3,"meters":329,"lat":28.0379849617,"lng":-16.61083393},{"number":2,"par":3,"strokeIndex":9,"meters":130,"lat":28.0371392886,"lng":-16.6117892727},{"number":3,"par":5,"strokeIndex":6,"meters":447,"lat":28.0399512617,"lng":-16.6120338299},{"number":4,"par":5,"strokeIndex":2,"meters":457,"lat":28.0378224715,"lng":-16.6149559024},{"number":5,"par":4,"strokeIndex":5,"meters":316,"lat":28.0341973884,"lng":-16.6131713685},{"number":6,"par":4,"strokeIndex":1,"meters":342,"lat":28.033359969,"lng":-16.6123718759},{"number":7,"par":4,"strokeIndex":4,"meters":342,"lat":28.0362620016,"lng":-16.6136001334},{"number":8,"par":4,"strokeIndex":7,"meters":236,"lat":28.0383069593,"lng":-16.6136609593},{"number":9,"par":3,"strokeIndex":8,"meters":170,"lat":28.034519719500008,"lng":-16.61177785427296},{"number":10,"par":4,"strokeIndex":3,"meters":327,"lat":28.0342398503,"lng":-16.6065091309},{"number":11,"par":3,"strokeIndex":8,"meters":134,"lat":28.0357296755,"lng":-16.6062688789},{"number":12,"par":5,"strokeIndex":2,"meters":472,"lat":28.038560623520002,"lng":-16.607702995863104},{"number":13,"par":4,"strokeIndex":5,"meters":244,"lat":28.0406883965,"lng":-16.6085590968},{"number":14,"par":5,"strokeIndex":7,"meters":477,"lat":28.036350810997256,"lng":-16.607129955736895},{"number":15,"par":4,"strokeIndex":6,"meters":320,"lat":28.0384951981,"lng":-16.6093808053},{"number":16,"par":4,"strokeIndex":1,"meters":326,"lat":28.040347175,"lng":-16.6114767573},{"number":17,"par":3,"strokeIndex":9,"meters":175,"lat":28.038635056502407,"lng":-16.610780529799996},{"number":18,"par":4,"strokeIndex":4,"meters":324,"lat":28.035720243373227,"lng":-16.609785235963948}]},{"id":"golf-las-americas","tee":"Amarilla","holes":[{"number":1,"par":5,"strokeIndex":7,"meters":449,"lat":28.0608267123,"lng":-16.7228874045},{"number":2,"par":4,"strokeIndex":3,"meters":381,"lat":28.0598912924,"lng":-16.719651125},{"number":3,"par":4,"strokeIndex":5,"meters":390,"lat":28.0615926189,"lng":-16.7163504726},{"number":4,"par":4,"strokeIndex":15,"meters":255,"lat":28.0632016122,"lng":-16.7147034019},{"number":5,"par":3,"strokeIndex":9,"meters":194,"lat":28.0636733166,"lng":-16.7168952429},{"number":6,"par":4,"strokeIndex":1,"meters":431,"lat":28.0646183865,"lng":-16.7205294419},{"number":7,"par":5,"strokeIndex":13,"meters":456,"lat":28.0643788542,"lng":-16.7161223781},{"number":8,"par":3,"strokeIndex":17,"meters":168,"lat":28.0637192061,"lng":-16.7146838493},{"number":9,"par":4,"strokeIndex":11,"meters":355,"lat":28.0620169446,"lng":-16.7178694487},{"number":10,"par":4,"strokeIndex":4,"meters":434,"lat":28.0623265221,"lng":-16.7231136436},{"number":11,"par":3,"strokeIndex":18,"meters":166,"lat":28.0611603439,"lng":-16.7231972683},{"number":12,"par":4,"strokeIndex":6,"meters":320,"lat":28.0624947859,"lng":-16.7255976511},{"number":13,"par":3,"strokeIndex":16,"meters":140,"lat":28.0625494398,"lng":-16.7245773526},{"number":14,"par":4,"strokeIndex":14,"meters":258,"lat":28.0642471758,"lng":-16.7262347634},{"number":15,"par":4,"strokeIndex":2,"meters":410,"lat":28.0647508286,"lng":-16.7212288966},{"number":16,"par":5,"strokeIndex":12,"meters":449,"lat":28.0644663268,"lng":-16.7256898864},{"number":17,"par":4,"strokeIndex":8,"meters":314,"lat":28.0622563827,"lng":-16.7237886765},{"number":18,"par":5,"strokeIndex":10,"meters":469,"lat":28.0621777915,"lng":-16.7187734219}]},{"id":"golf-los-palos","tee":"Amarillas","holes":[{"number":1,"par":3,"strokeIndex":6,"meters":106,"lat":28.0373725343,"lng":-16.6806916714},{"number":2,"par":3,"strokeIndex":8,"meters":92,"lat":28.0365765723,"lng":-16.6813593471},{"number":3,"par":3,"strokeIndex":3,"meters":127,"lat":28.0364470432,"lng":-16.6826680708},{"number":4,"par":3,"strokeIndex":1,"meters":155,"lat":28.0358381035,"lng":-16.6811135364},{"number":5,"par":3,"strokeIndex":2,"meters":115,"lat":28.0366058389,"lng":-16.6807633138},{"number":6,"par":3,"strokeIndex":5,"meters":100,"lat":28.0357814611,"lng":-16.6802655698},{"number":7,"par":3,"strokeIndex":7,"meters":132,"lat":28.0367930438,"lng":-16.6801272417},{"number":8,"par":3,"strokeIndex":9,"meters":101,"lat":28.0369097292,"lng":-16.6804475714},{"number":9,"par":3,"strokeIndex":4,"meters":113,"lat":28.0381923711,"lng":-16.6803508176}]}];
+      const courseNames = {
+        "abama-golf": "Abama Golf",
+        "amarilla-golf": "Amarilla Golf",
+        "golf-costa-adeje": "Golf Costa Adeje",
+        "buenavista-golf": "Buenavista Golf",
+        "golf-del-sur": "Golf del Sur",
+        "golf-las-americas": "Golf Las Americas",
+        "golf-los-palos": "Golf Los Palos",
+      };
+      const colors = ["#1177b9", "#2d7f2f", "#cf3b2c", "#7a52c7", "#d48b19", "#0f8f8f", "#c2185b"];
+      const map = L.map("map", { zoomControl: true }).setView([28.13, -16.69], 10);
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: "&copy; OpenStreetMap",
+      }).addTo(map);
+
+      const layersByCourse = new Map();
+      const list = document.querySelector("#course-list");
+
+      function buildPopup(course, hole) {
+        return `
+          <strong>${courseNames[course.id] || course.id}</strong><br />
+          Hoyo ${hole.number} · Par ${hole.par} · HCP ${hole.strokeIndex}<br />
+          ${course.tee} · ${hole.meters} m<br />
+          ${hole.lat.toFixed(6)}, ${hole.lng.toFixed(6)}
+        `;
+      }
+
+      courses.forEach((course, index) => {
+        const color = colors[index % colors.length];
+        const group = L.layerGroup();
+        const line = L.polyline(
+          course.holes.map((hole) => [hole.lat, hole.lng]),
+          { color, weight: 2.5, opacity: 0.75 }
+        );
+        line.addTo(group);
+
+        course.holes.forEach((hole) => {
+          const marker = L.circleMarker([hole.lat, hole.lng], {
+            radius: 6,
+            color,
+            weight: 2,
+            fillColor: "#ffffff",
+            fillOpacity: 0.95,
+          });
+          marker.bindPopup(buildPopup(course, hole));
+          marker.bindTooltip(`${courseNames[course.id] || course.id} · H${hole.number}`, { direction: "top" });
+          marker.addTo(group);
+        });
+
+        layersByCourse.set(course.id, group);
+        group.addTo(map);
+
+        const item = document.createElement("div");
+        item.className = "course-item";
+        item.innerHTML = `
+          <label>
+            <input type="checkbox" data-course-id="${course.id}" checked />
+            <span class="swatch" style="background:${color}"></span>
+            <span>${courseNames[course.id] || course.id}</span>
+          </label>
+          <div class="course-meta">${course.tee} · ${course.holes.length} hoyos con coordenadas</div>
+        `;
+        list.appendChild(item);
+      });
+
+      function updateBounds() {
+        const latLngs = [];
+        layersByCourse.forEach((group, id) => {
+          if (!map.hasLayer(group)) {
+            return;
+          }
+          group.eachLayer((layer) => {
+            if (typeof layer.getLatLng === "function") {
+              latLngs.push(layer.getLatLng());
+            }
+          });
+        });
+        if (latLngs.length) {
+          map.fitBounds(L.latLngBounds(latLngs), { padding: [24, 24] });
+        }
+      }
+
+      list.addEventListener("change", (event) => {
+        const checkbox = event.target.closest("input[type='checkbox']");
+        if (!checkbox) {
+          return;
+        }
+        const group = layersByCourse.get(checkbox.dataset.courseId);
+        if (!group) {
+          return;
+        }
+        if (checkbox.checked) {
+          group.addTo(map);
+        } else {
+          map.removeLayer(group);
+        }
+        updateBounds();
+      });
+
+      document.querySelector("#show-all").addEventListener("click", () => {
+        document.querySelectorAll("input[data-course-id]").forEach((checkbox) => {
+          checkbox.checked = true;
+          const group = layersByCourse.get(checkbox.dataset.courseId);
+          if (group && !map.hasLayer(group)) {
+            group.addTo(map);
+          }
+        });
+        updateBounds();
+      });
+
+      document.querySelector("#hide-all").addEventListener("click", () => {
+        document.querySelectorAll("input[data-course-id]").forEach((checkbox) => {
+          checkbox.checked = false;
+          const group = layersByCourse.get(checkbox.dataset.courseId);
+          if (group && map.hasLayer(group)) {
+            map.removeLayer(group);
+          }
+        });
+      });
+
+      updateBounds();
+    </script>
+  </body>
+</html>
